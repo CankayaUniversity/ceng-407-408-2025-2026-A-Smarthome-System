@@ -1,0 +1,4 @@
+gpiozero
+picamera2
+opencv-python
+numpy
