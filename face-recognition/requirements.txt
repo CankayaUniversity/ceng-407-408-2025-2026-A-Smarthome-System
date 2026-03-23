@@ -1,0 +1,6 @@
+gpiozero
+picamera2
+opencv-python
+numpy
+face_recognition
+requests

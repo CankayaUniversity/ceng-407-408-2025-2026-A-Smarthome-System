@@ -1,0 +1,34 @@
+# --- Python Standartları ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Sanal Ortamlar (Virtual Environments) ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Çevresel Değişkenler ve Gizli Bilgiler ---
+.env
+
+# --- İşletim Sistemi Dosyaları ---
+.DS_Store
+Thumbs.db
+
+# --- Editör ve IDE Dosyaları ---
+.vscode/
+.idea/
+
+# --- Log Dosyaları ---
+*.log
+
+# --- PROJEYE ÖZEL VERİLER (ÖNEMLİ) ---
+# Çekilen fotoğrafların ve kayıtlı yüz verilerinin yüklenmesini engeller.
+# Ancak klasör yapısının bozulmaması için .gitkeep dosyalarına izin verir.
+data/captures/*
+!data/captures/.gitkeep
+
+data/residents/*
+!data/residents/.gitkeep
