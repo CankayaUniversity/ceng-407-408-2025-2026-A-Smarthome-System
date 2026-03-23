@@ -1,0 +1,24 @@
+# --- Node.js & Bağımlılıklar ---
+node_modules/
+
+# --- Build (Derleme) Çıktıları ---
+client/dist/
+dist/
+
+# --- Çevresel Değişkenler (Gizli Bilgiler) ---
+.env
+.env.*
+!.env.example  # Sadece .env.example şablon olarak gitsin, içleri boş olduğu için güvenlidir
+
+# --- Log ve Hata Dosyaları ---
+*.log
+*error.txt
+nginx_logs.txt
+
+# --- Sunucu Yüklemeleri (Önemli) ---
+# Yüklenen dosyaların GitHub'ı şişirmesini engeller ama klasör yapısını korur
+server/uploads/*
+!server/uploads/.gitkeep
+
+# --- Bize Özel Dokümanlar (Şimdilik Gizli) ---
+*.md
