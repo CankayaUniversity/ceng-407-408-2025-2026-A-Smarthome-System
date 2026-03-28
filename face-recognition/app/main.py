@@ -22,6 +22,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def choose_best_result(frame_results: list[dict]) -> dict | None:
+    """
+    Burst içindeki tüm frame sonuçları arasından en iyi sonucu seçer.
+
+    Öncelik:
+    1. authorized sonuçlar -> en düşük score (distance)
+    2. unauthorized sonuçlar -> en düşük score
+    3. hiç geçerli sonuç yoksa None
+    """
+    if not frame_results:
+        return None
+
+    authorized = [
+        item for item in frame_results
+        if item["result"]["status"] == "authorized" and item["result"]["score"] is not None
+    ]
+
+    if authorized:
+        return min(authorized, key=lambda item: item["result"]["score"])
+
+    unauthorized = [
+        item for item in frame_results
+        if item["result"]["status"] == "unauthorized" and item["result"]["score"] is not None
+    ]
+
+    if unauthorized:
+        return min(unauthorized, key=lambda item: item["result"]["score"])
+
+    return None
+
+
 def main():
     sensor = PIRSensor()
     camera = CameraCapture()
@@ -31,7 +62,6 @@ def main():
     event_logger = EventLogger()
     auto_collector = AutoCollector()
 
-    # Background resident sync from website
     start_resident_sync_thread()
 
     logger.info("Smart Home Face Recognition started on Raspberry Pi...")
@@ -46,20 +76,67 @@ def main():
                     delay=BURST_DELAY_SECONDS
                 )
 
-                selected_image_path = None
-                selected_faces = []
+                frame_results = []
+                no_face_images = []
 
                 for image_path in burst_images:
-                    faces = detector.detect_faces(image_path)
-                    if len(faces) > 0:
-                        selected_image_path = image_path
-                        selected_faces = faces
-                        break
+                    try:
+                        faces = detector.detect_faces(image_path)
+                        face_count = len(faces)
 
-                if selected_image_path is None:
-                    logger.info("No face detected in burst frames")
+                        if face_count == 0:
+                            no_face_images.append(image_path)
+                            logger.info("No face detected in frame: %s", image_path)
+                            continue
 
-                    fallback_image = burst_images[0] if burst_images else None
+                        logger.info(
+                            "%d face(s) detected in frame: %s",
+                            face_count,
+                            image_path,
+                        )
+
+                        try:
+                            embedding = embedder.get_embedding(image_path)
+                            result = matcher.find_best_match(embedding)
+
+                            logger.info(
+                                "Frame result: status=%s name=%s score=%s image=%s",
+                                result["status"],
+                                result.get("name"),
+                                result.get("score"),
+                                image_path,
+                            )
+
+                            frame_results.append(
+                                {
+                                    "image_path": image_path,
+                                    "face_count": face_count,
+                                    "result": result,
+                                }
+                            )
+
+                        except Exception as recognition_error:
+                            logger.warning(
+                                "Recognition failed for frame %s: %s",
+                                image_path,
+                                recognition_error,
+                            )
+
+                    except Exception as detection_error:
+                        logger.warning(
+                            "Detection failed for frame %s: %s",
+                            image_path,
+                            detection_error,
+                        )
+
+                best = choose_best_result(frame_results)
+
+                if best is None:
+                    logger.info("No valid recognition result in burst frames")
+
+                    fallback_image = no_face_images[0] if no_face_images else (
+                        burst_images[0] if burst_images else None
+                    )
 
                     event_logger.log_event(
                         event_type="motion",
@@ -85,52 +162,40 @@ def main():
                     time.sleep(2)
                     continue
 
-                face_count = len(selected_faces)
+                selected_image_path = best["image_path"]
+                face_count = best["face_count"]
+                result = best["result"]
+
                 logger.info(
-                    "%d face(s) detected — using frame: %s",
-                    face_count,
+                    "Selected best frame: %s | status=%s | name=%s | score=%s",
                     selected_image_path,
+                    result["status"],
+                    result.get("name"),
+                    result.get("score"),
                 )
 
-                try:
-                    embedding = embedder.get_embedding(selected_image_path)
-                    result = matcher.find_best_match(embedding)
+                event_logger.log_event(
+                    event_type="motion",
+                    image_path=selected_image_path,
+                    face_detected=True,
+                    face_count=face_count,
+                    recognized_name=result["name"],
+                    person_id=result["person_id"],
+                    match_score=result["score"],
+                    status=result["status"],
+                )
 
-                    logger.info(
-                        "Match result: status=%s name=%s score=%s",
-                        result["status"],
-                        result.get("name"),
-                        result.get("score"),
-                    )
+                send_camera_event(image_path=selected_image_path, result=result)
 
-                    # Local event log
-                    event_logger.log_event(
-                        event_type="motion",
-                        image_path=selected_image_path,
-                        face_detected=True,
-                        face_count=face_count,
-                        recognized_name=result["name"],
-                        person_id=result["person_id"],
-                        match_score=result["score"],
-                        status=result["status"],
-                    )
-
-                    # Send event to website backend
-                    send_camera_event(image_path=selected_image_path, result=result)
-
-                    # Save high-confidence authorized samples for future enrichment
-                    if auto_collector.should_collect(result, face_count):
-                        try:
-                            saved_path = auto_collector.save_sample(
-                                image_path=selected_image_path,
-                                person_name=result["name"]
-                            )
-                            logger.info("Auto-collected sample saved: %s", saved_path)
-                        except Exception as auto_error:
-                            logger.warning("Auto-collection failed: %s", auto_error)
-
-                except Exception as error:
-                    logger.error("Recognition error: %s", error)
+                if auto_collector.should_collect(result, face_count):
+                    try:
+                        saved_path = auto_collector.save_sample(
+                            image_path=selected_image_path,
+                            person_name=result["name"]
+                        )
+                        logger.info("Auto-collected sample saved: %s", saved_path)
+                    except Exception as auto_error:
+                        logger.warning("Auto-collection failed: %s", auto_error)
 
                 time.sleep(5)
 

@@ -6,6 +6,9 @@ PIR_GPIO_PIN = 17
 # ─── Timing ───────────────────────────────────────────────────
 POLL_INTERVAL_SECONDS = 0.2
 MOTION_COOLDOWN_SECONDS = 5
+MOTION_CONFIRMATION_CHECKS = 3
+MOTION_CONFIRMATION_INTERVAL = 0.2
+MOTION_CONFIRMATION_REQUIRED = 2
 
 # ─── Camera ───────────────────────────────────────────────────
 CAPTURE_DIR = Path("data/captures")
