@@ -1,14 +1,17 @@
 from datetime import datetime
 from pathlib import Path
+import time
+
 from picamera2 import Picamera2
+
 from app.config import CAPTURE_DIR, IMAGE_WIDTH, IMAGE_HEIGHT
 
 
 class CameraCapture:
     def __init__(self):
         CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-        self.picam2 = Picamera2()
 
+        self.picam2 = Picamera2()
         config = self.picam2.create_still_configuration(
             main={"size": (IMAGE_WIDTH, IMAGE_HEIGHT)}
         )
@@ -16,10 +19,20 @@ class CameraCapture:
         self.picam2.start()
 
     def capture_frame(self) -> str:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         image_path = CAPTURE_DIR / f"capture_{timestamp}.jpg"
         self.picam2.capture_file(str(image_path))
         return str(image_path)
+
+    def capture_burst(self, count: int = 3, delay: float = 0.3) -> list[str]:
+        image_paths = []
+
+        for _ in range(count):
+            image_path = self.capture_frame()
+            image_paths.append(image_path)
+            time.sleep(delay)
+
+        return image_paths
 
     def close(self):
         self.picam2.stop()

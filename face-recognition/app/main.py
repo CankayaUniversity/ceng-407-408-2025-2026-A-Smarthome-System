@@ -11,6 +11,9 @@ from app.vision.matcher import FaceMatcher
 from app.logging_system.event_logger import EventLogger
 from app.api.client import send_camera_event
 from app.api.resident_sync import start_resident_sync_thread
+from app.storage.auto_collector import AutoCollector
+
+from app.config import BURST_COUNT, BURST_DELAY_SECONDS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,8 +29,9 @@ def main():
     embedder = FaceEmbedder()
     matcher = FaceMatcher()
     event_logger = EventLogger()
+    auto_collector = AutoCollector()
 
-    # Start background thread that syncs resident embeddings from the website every 60s
+    # Background resident sync from website
     start_resident_sync_thread()
 
     logger.info("Smart Home Face Recognition started on Raspberry Pi...")
@@ -37,16 +41,29 @@ def main():
             if sensor.motion_detected():
                 logger.info("Motion detected")
 
-                image_path = camera.capture_frame()
-                faces = detector.detect_faces(image_path)
-                face_count = len(faces)
+                burst_images = camera.capture_burst(
+                    count=BURST_COUNT,
+                    delay=BURST_DELAY_SECONDS
+                )
 
-                if face_count == 0:
-                    logger.info("No face detected in captured frame")
+                selected_image_path = None
+                selected_faces = []
+
+                for image_path in burst_images:
+                    faces = detector.detect_faces(image_path)
+                    if len(faces) > 0:
+                        selected_image_path = image_path
+                        selected_faces = faces
+                        break
+
+                if selected_image_path is None:
+                    logger.info("No face detected in burst frames")
+
+                    fallback_image = burst_images[0] if burst_images else None
 
                     event_logger.log_event(
                         event_type="motion",
-                        image_path=image_path,
+                        image_path=fallback_image,
                         face_detected=False,
                         face_count=0,
                         recognized_name=None,
@@ -55,19 +72,28 @@ def main():
                         status="no_face",
                     )
 
-                    # Send to website as "unknown" event (no face)
                     send_camera_event(
-                        image_path=image_path,
-                        result={"status": "unknown", "matched": False, "score": None, "person_id": None},
+                        image_path=fallback_image,
+                        result={
+                            "status": "unknown",
+                            "matched": False,
+                            "score": None,
+                            "person_id": None,
+                        },
                     )
 
                     time.sleep(2)
                     continue
 
-                logger.info("%d face(s) detected — running recognition", face_count)
+                face_count = len(selected_faces)
+                logger.info(
+                    "%d face(s) detected — using frame: %s",
+                    face_count,
+                    selected_image_path,
+                )
 
                 try:
-                    embedding = embedder.get_embedding(image_path)
+                    embedding = embedder.get_embedding(selected_image_path)
                     result = matcher.find_best_match(embedding)
 
                     logger.info(
@@ -77,10 +103,10 @@ def main():
                         result.get("score"),
                     )
 
-                    # Log locally
+                    # Local event log
                     event_logger.log_event(
                         event_type="motion",
-                        image_path=image_path,
+                        image_path=selected_image_path,
                         face_detected=True,
                         face_count=face_count,
                         recognized_name=result["name"],
@@ -89,8 +115,19 @@ def main():
                         status=result["status"],
                     )
 
-                    # Send to website backend (best-effort — offline graceful)
-                    send_camera_event(image_path=image_path, result=result)
+                    # Send event to website backend
+                    send_camera_event(image_path=selected_image_path, result=result)
+
+                    # Save high-confidence authorized samples for future enrichment
+                    if auto_collector.should_collect(result, face_count):
+                        try:
+                            saved_path = auto_collector.save_sample(
+                                image_path=selected_image_path,
+                                person_name=result["name"]
+                            )
+                            logger.info("Auto-collected sample saved: %s", saved_path)
+                        except Exception as auto_error:
+                            logger.warning("Auto-collection failed: %s", auto_error)
 
                 except Exception as error:
                     logger.error("Recognition error: %s", error)
