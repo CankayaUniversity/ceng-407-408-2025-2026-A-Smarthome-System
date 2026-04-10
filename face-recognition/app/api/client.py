@@ -21,28 +21,66 @@ HEADERS = {
 }
 
 
-def send_camera_event(image_path: str | None, result: dict) -> bool:
+def _pick_primary_face(face_results: list[dict]) -> dict:
+    """
+    face_results listesinden legacy alanları türetmek için birincil yüzü seçer.
+
+    Öncelik:
+    1. İlk authorized yüz
+    2. Yoksa en düşük confidence (distance) olan yüz
+    3. Hiçbiri yoksa unknown fallback
+    """
+    if not face_results:
+        return {"status": "unknown", "matched": False, "score": None, "person_id": None}
+
+    authorized = [f for f in face_results if f["status"] == "authorized"]
+    if authorized:
+        return authorized[0]
+
+    with_score = [f for f in face_results if f["confidence"] is not None]
+    if with_score:
+        return min(with_score, key=lambda f: f["confidence"])
+
+    return face_results[0]
+
+
+def send_camera_event(
+    image_path: str | None,
+    result: dict,
+    face_results: list[dict] | None = None,
+) -> bool:
     """
     Send a face recognition event to the website backend.
 
     Args:
         image_path: Local path to captured image (or None if no image).
-        result: Dict from FaceMatcher.find_best_match(), e.g.:
-                {matched, person_id, name, score, status}
+        result: Legacy dict (used when face_results is None).
+        face_results: List of per-face dicts from multi-face pipeline (optional).
 
     Returns:
         True on success, False on failure.
     """
     url = f"{API_BASE_URL}/api/camera/events"
 
-    data = {
-        "result": result.get("status", "unknown"),   # "authorized" | "unauthorized"
-        "match_score": str(result["score"]) if result.get("score") is not None else "",
-    }
-
-    # Include person_id only for authorized matches so backend can link to FaceProfile
-    if result.get("matched") and result.get("person_id"):
-        data["person_id"] = result["person_id"]
+    # Determine primary face for legacy fields
+    if face_results:
+        primary = _pick_primary_face(face_results)
+        data = {
+            "result": primary.get("status", "unknown"),
+            "match_score": str(primary["confidence"]) if primary.get("confidence") is not None else "",
+            "face_count": str(len(face_results)),
+            "faces": json.dumps(face_results, ensure_ascii=False),
+        }
+        if primary.get("matched") and primary.get("person_id"):
+            data["person_id"] = primary["person_id"]
+    else:
+        # Legacy single-face fallback
+        data = {
+            "result": result.get("status", "unknown"),
+            "match_score": str(result["score"]) if result.get("score") is not None else "",
+        }
+        if result.get("matched") and result.get("person_id"):
+            data["person_id"] = result["person_id"]
 
     files = None
     try:

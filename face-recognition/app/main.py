@@ -1,5 +1,6 @@
 import logging
 import time
+import cv2
 
 from app.camera.capture import CameraCapture
 from app.sensors.pir_sensor import PIRSensor
@@ -24,33 +25,28 @@ logger = logging.getLogger(__name__)
 
 def choose_best_result(frame_results: list[dict]) -> dict | None:
     """
-    Burst içindeki tüm frame sonuçları arasından en iyi sonucu seçer.
+    Burst içindeki frame sonuçları arasından en iyi frame'i seçer.
 
-    Öncelik:
-    1. authorized sonuçlar -> en düşük score (distance)
-    2. unauthorized sonuçlar -> en düşük score
-    3. hiç geçerli sonuç yoksa None
+    Her frame: {image_path, face_count, face_results: [...]}
+
+    Seçim kriteri (score = euclidean distance, düşük = daha iyi):
+    1. En çok authorized yüz sayısı olan frame
+    2. Eşitse en çok toplam yüz sayısı olan frame
+    3. Hâlâ eşitse en düşük ortalama confidence (distance) olan frame
     """
     if not frame_results:
         return None
 
-    authorized = [
-        item for item in frame_results
-        if item["result"]["status"] == "authorized" and item["result"]["score"] is not None
-    ]
+    def _frame_sort_key(frame):
+        faces = frame.get("face_results", [])
+        authorized_count = sum(1 for f in faces if f["status"] == "authorized")
+        total_count = len(faces)
+        scores = [f["confidence"] for f in faces if f["confidence"] is not None]
+        avg_score = sum(scores) / len(scores) if scores else float("inf")
+        # Negate authorized_count and total_count so min() picks the highest
+        return (-authorized_count, -total_count, avg_score)
 
-    if authorized:
-        return min(authorized, key=lambda item: item["result"]["score"])
-
-    unauthorized = [
-        item for item in frame_results
-        if item["result"]["status"] == "unauthorized" and item["result"]["score"] is not None
-    ]
-
-    if unauthorized:
-        return min(unauthorized, key=lambda item: item["result"]["score"])
-
-    return None
+    return min(frame_results, key=_frame_sort_key)
 
 
 def main():
@@ -95,32 +91,63 @@ def main():
                             image_path,
                         )
 
-                        try:
-                            embedding = embedder.get_embedding(image_path)
-                            result = matcher.find_best_match(embedding)
+                        image = cv2.imread(image_path)
+                        if image is None:
+                            logger.warning("Could not read image: %s", image_path)
+                            continue
 
-                            logger.info(
-                                "Frame result: status=%s name=%s score=%s image=%s",
-                                result["status"],
-                                result.get("name"),
-                                result.get("score"),
-                                image_path,
-                            )
+                        img_h, img_w = image.shape[:2]
+                        face_results_list = []
 
-                            frame_results.append(
-                                {
-                                    "image_path": image_path,
-                                    "face_count": face_count,
-                                    "result": result,
-                                }
-                            )
+                        for bbox in faces:
+                            x, y, w, h = bbox
+                            x1 = max(0, x)
+                            y1 = max(0, y)
+                            x2 = min(img_w, x + w)
+                            y2 = min(img_h, y + h)
 
-                        except Exception as recognition_error:
-                            logger.warning(
-                                "Recognition failed for frame %s: %s",
-                                image_path,
-                                recognition_error,
-                            )
+                            crop = image[y1:y2, x1:x2]
+                            if crop.size == 0:
+                                logger.debug("Empty crop for bbox %s, skipping", bbox)
+                                continue
+
+                            try:
+                                embedding = embedder.get_embedding_from_crop(crop)
+                                if embedding is None:
+                                    logger.debug("No embedding from crop bbox %s", bbox)
+                                    continue
+
+                                result = matcher.find_best_match(embedding)
+
+                                face_results_list.append({
+                                    "bbox": [x1, y1, x2, y2],
+                                    "label": result.get("name"),
+                                    "confidence": result.get("score"),
+                                    "status": result["status"],
+                                    "person_id": result.get("person_id"),
+                                    "matched": result.get("matched", False),
+                                })
+
+                                logger.info(
+                                    "Face bbox=%s status=%s name=%s score=%s",
+                                    [x1, y1, x2, y2],
+                                    result["status"],
+                                    result.get("name"),
+                                    result.get("score"),
+                                )
+
+                            except Exception as recognition_error:
+                                logger.warning(
+                                    "Recognition failed for bbox %s in %s: %s",
+                                    bbox, image_path, recognition_error,
+                                )
+
+                        if face_results_list:
+                            frame_results.append({
+                                "image_path": image_path,
+                                "face_count": len(faces),
+                                "face_results": face_results_list,
+                            })
 
                     except Exception as detection_error:
                         logger.warning(
@@ -164,14 +191,29 @@ def main():
 
                 selected_image_path = best["image_path"]
                 face_count = best["face_count"]
-                result = best["result"]
+                face_results = best["face_results"]
+
+                # Pick primary face for legacy fields (first authorized or best score)
+                primary = face_results[0]
+                for fr in face_results:
+                    if fr["status"] == "authorized":
+                        primary = fr
+                        break
+
+                # Build compact summary for logging: ["Ahmet(0.32)", "Unknown(0.78)"]
+                faces_summary = [
+                    "{}({})".format(
+                        fr.get("label") or "Unknown",
+                        fr.get("confidence") if fr.get("confidence") is not None else "?",
+                    )
+                    for fr in face_results
+                ]
 
                 logger.info(
-                    "Selected best frame: %s | status=%s | name=%s | score=%s",
+                    "Selected best frame: %s | faces=%d | summary=%s",
                     selected_image_path,
-                    result["status"],
-                    result.get("name"),
-                    result.get("score"),
+                    face_count,
+                    faces_summary,
                 )
 
                 event_logger.log_event(
@@ -179,19 +221,34 @@ def main():
                     image_path=selected_image_path,
                     face_detected=True,
                     face_count=face_count,
-                    recognized_name=result["name"],
-                    person_id=result["person_id"],
-                    match_score=result["score"],
-                    status=result["status"],
+                    recognized_name=primary.get("label"),
+                    person_id=primary.get("person_id"),
+                    match_score=primary.get("confidence"),
+                    status=primary.get("status"),
+                    faces_summary=faces_summary,
                 )
 
-                send_camera_event(image_path=selected_image_path, result=result)
+                send_camera_event(
+                    image_path=selected_image_path,
+                    result={
+                        "status": primary.get("status", "unknown"),
+                        "matched": primary.get("matched", False),
+                        "score": primary.get("confidence"),
+                        "person_id": primary.get("person_id"),
+                    },
+                    face_results=face_results,
+                )
 
-                if auto_collector.should_collect(result, face_count):
+                # AutoCollector: only runs when single face in frame
+                if auto_collector.should_collect(
+                    {"status": primary.get("status"), "name": primary.get("label"),
+                     "score": primary.get("confidence")},
+                    face_count,
+                ):
                     try:
                         saved_path = auto_collector.save_sample(
                             image_path=selected_image_path,
-                            person_name=result["name"]
+                            person_name=primary["label"]
                         )
                         logger.info("Auto-collected sample saved: %s", saved_path)
                     except Exception as auto_error:

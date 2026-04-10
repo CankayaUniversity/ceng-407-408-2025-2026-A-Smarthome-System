@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 import face_recognition
 
 
@@ -31,3 +33,36 @@ class FaceEmbedder:
         embedding = encodings[0]
 
         return embedding.tolist()
+
+    def get_embedding_from_crop(self, crop_bgr: np.ndarray, padding: int = 20) -> list | None:
+        """
+        MediaPipe bbox ile kesilmiş crop görüntüsünden embedding çıkarır.
+        Crop'un tamamını yüz lokasyonu olarak verir; tekrar detection yapmaz.
+        Başarısızsa None döner.
+        """
+        if crop_bgr is None or crop_bgr.size == 0:
+            return None
+
+        h, w = crop_bgr.shape[:2]
+        if h < 20 or w < 20:
+            return None
+
+        crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+
+        # Padding ekle — crop kenarlarında kayıp bilgiyi telafi eder
+        padded = cv2.copyMakeBorder(
+            crop_rgb, padding, padding, padding, padding,
+            cv2.BORDER_REPLICATE,
+        )
+
+        ph, pw = padded.shape[:2]
+        # Tüm padded görüntüyü tek yüz lokasyonu olarak ver
+        # face_recognition formatı: (top, right, bottom, left)
+        face_location = [(padding, pw - padding, ph - padding, padding)]
+
+        encodings = face_recognition.face_encodings(padded, known_face_locations=face_location)
+
+        if len(encodings) == 0:
+            return None
+
+        return encodings[0].tolist()
