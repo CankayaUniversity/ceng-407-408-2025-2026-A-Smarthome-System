@@ -389,16 +389,7 @@ def analyze_burst_and_upload(image_paths: list[str]):
                 status="no_face",
             )
 
-            response = create_security_event(
-                event_type="unknown_motion",
-                message="Motion detected but no face identified.",
-            )
-            if response and fallback_image:
-                upload_intelligent_snapshot(
-                    event_id=response["event_id"],
-                    is_resident=False,
-                    image_path=fallback_image,
-                )
+            logger.info("No face found in burst. Skipping cloud save.")
             return
 
         selected_image_path = best["image_path"]
