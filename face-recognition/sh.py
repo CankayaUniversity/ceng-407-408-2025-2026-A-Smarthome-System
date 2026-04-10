@@ -4,6 +4,7 @@ import os
 import time
 import threading
 import logging
+import json
 from pathlib import Path
 
 # Path and display setup
@@ -20,7 +21,14 @@ from picamera2 import Picamera2
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(BASE_DIR / ".env")
+    ENV_CANDIDATES = [
+        BASE_DIR / ".env",
+        BASE_DIR.parent / ".env",
+    ]
+    for env_path in ENV_CANDIDATES:
+        if env_path.exists():
+            load_dotenv(env_path)
+            break
 except Exception:
     pass
 
@@ -96,8 +104,16 @@ def _post_json(endpoint: str, payload: dict):
         response.raise_for_status()
         logger.info("POST %s -> %s", endpoint, response.status_code)
         return response.json() if response.content else {}
+    except requests.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.response.text[:500] if exc.response is not None else ""
+        except Exception:
+            pass
+        logger.warning("POST %s failed: %s | body=%s | payload=%s", endpoint, exc, body, payload)
+        return None
     except Exception as exc:
-        logger.warning("POST %s failed: %s", endpoint, exc)
+        logger.warning("POST %s failed: %s | payload=%s", endpoint, exc, payload)
         return None
 
 
@@ -114,8 +130,16 @@ def _post_file(endpoint: str, params: dict, file_path: str):
         response.raise_for_status()
         logger.info("UPLOAD %s -> %s", endpoint, response.status_code)
         return response.json() if response.content else {}
+    except requests.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.response.text[:500] if exc.response is not None else ""
+        except Exception:
+            pass
+        logger.warning("UPLOAD %s failed: %s | body=%s | params=%s | file=%s", endpoint, exc, body, params, file_path)
+        return None
     except Exception as exc:
-        logger.warning("UPLOAD %s failed: %s", endpoint, exc)
+        logger.warning("UPLOAD %s failed: %s | params=%s | file=%s", endpoint, exc, params, file_path)
         return None
 
 
@@ -149,13 +173,28 @@ def create_alert_event(event_type: str, message: str, priority: str = "warning")
     return _post_json("/events/alert", payload)
 
 
-def upload_intelligent_snapshot(event_id: str, is_resident: bool, image_path: str, resident_id=None):
+def upload_intelligent_snapshot(
+    event_id: str,
+    is_resident: bool,
+    image_path: str,
+    resident_id=None,
+    face_count: int = 1,
+    match_score: float | None = None,
+    bbox=None,
+):
     params = {
         "event_id": event_id,
         "is_resident": str(is_resident).lower(),
+        "face_count": face_count,
     }
+
     if resident_id:
         params["resident_id"] = resident_id
+    if match_score is not None:
+        params["match_score"] = match_score
+    if bbox is not None:
+        params["bbox"] = json.dumps(bbox)
+
     return _post_file("/events/upload-intelligent", params, image_path)
 
 
