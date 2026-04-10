@@ -1,2 +1,12 @@
 node_modules/
 website/server/node_modules/
+
+# Environment secrets
+.env
+
+# Cloud offline queue DB (runtime generated)
+data/cloud_queue.db
+
+# Python cache
+__pycache__/
+*.pyc
