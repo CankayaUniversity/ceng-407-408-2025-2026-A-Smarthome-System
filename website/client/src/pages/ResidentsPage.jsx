@@ -113,7 +113,9 @@ const ResidentsPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--s8)', paddingBottom: 'var(--s6)', borderBottom: '1px solid var(--border-dim)' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Residents</h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)' }}>Authorized faces for AI recognition</p>
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)' }}>
+                        Authorized faces for AI recognition. Profiles sync to your Pi — there is no approval step; status reflects whether a face vector exists in the database yet.
+                    </p>
                 </div>
                 <button className="btn btn-primary" onClick={() => setShowModal(true)}><UserPlus size={16} /> Add Resident</button>
             </div>
@@ -132,7 +134,27 @@ const ResidentsPage = () => {
                     {residents.map((r, i) => {
                         const face = r.resident_faces?.[0];
                         const photoUrl = face?.image_path ? getPublicUrl('event-snapshots', face.image_path) : (r.photo_path ? getPublicUrl('event-snapshots', r.photo_path) : null);
-                        const hasEmbedding = face?.embedding_json || r.embedding;
+                        const rawEmb = face?.embedding_json ?? r.embedding;
+                        const hasEmbedding = Array.isArray(rawEmb)
+                            ? rawEmb.length > 0
+                            : Boolean(rawEmb);
+                        const hasPhoto = Boolean(r.photo_path || face?.image_path);
+                        let statusLine;
+                        let badgeContent;
+                        let badgeClass;
+                        if (hasEmbedding) {
+                            statusLine = 'Face vector stored — Pi can match this person.';
+                            badgeContent = (<><ShieldCheck size={10} />&nbsp;Active</>);
+                            badgeClass = 'badge-success';
+                        } else if (hasPhoto) {
+                            statusLine = 'Photo saved. With the Pi gateway (uvicorn) running, a face vector is built automatically within about 1–2 minutes. Refresh this page to update.';
+                            badgeContent = 'Encoding';
+                            badgeClass = 'badge-warning';
+                        } else {
+                            statusLine = 'Add a clear, front-facing photo. Nothing is waiting on admin approval.';
+                            badgeContent = 'No photo';
+                            badgeClass = 'badge-neutral';
+                        }
                         return (
                             <div key={r.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)', animation: `fadeIn 0.4s var(--ease-out) ${i * 60}ms both`, opacity: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s4)' }}>
@@ -144,11 +166,11 @@ const ResidentsPage = () => {
                                         <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 2 }}>Resident</div>
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s2)', padding: 'var(--s3)', background: 'var(--bg-raised)', borderRadius: 'var(--r-md)', border: '1px solid var(--border-dim)' }}>
-                                    <Camera size={14} style={{ color: 'var(--text-muted)' }} />
-                                    <span style={{ fontSize: 'var(--size-xs)', color: 'var(--text-secondary)' }}>{hasEmbedding ? 'AI profile ready' : 'No face data yet'}</span>
-                                    <div className={`badge ${hasEmbedding ? 'badge-success' : 'badge-neutral'}`} style={{ marginLeft: 'auto' }}>
-                                        {hasEmbedding ? <><ShieldCheck size={10} />&nbsp;Active</> : 'Pending'}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--s2)', padding: 'var(--s3)', background: 'var(--bg-raised)', borderRadius: 'var(--r-md)', border: '1px solid var(--border-dim)' }}>
+                                    <Camera size={14} style={{ color: 'var(--text-muted)', marginTop: 2, flexShrink: 0 }} />
+                                    <span style={{ fontSize: 'var(--size-xs)', color: 'var(--text-secondary)', lineHeight: 1.45 }}>{statusLine}</span>
+                                    <div className={`badge ${badgeClass}`} style={{ marginLeft: 'auto', flexShrink: 0, alignSelf: 'flex-start' }}>
+                                        {badgeContent}
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 'var(--s2)', marginTop: 'auto' }}>
