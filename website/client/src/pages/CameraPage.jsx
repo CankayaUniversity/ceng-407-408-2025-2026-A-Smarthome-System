@@ -33,6 +33,9 @@ const CameraPage = () => {
 
     const latestSnapshotUrl = events[0]?.snapshot_path
         ? getPublicUrl('event-snapshots', events[0].snapshot_path) : null;
+    if (events[0]?.snapshot_path && !latestSnapshotUrl) {
+        console.warn('[Camera] snapshot_path exists but public URL is null:', events[0].snapshot_path);
+    }
 
     return (
         <div>
@@ -53,9 +56,9 @@ const CameraPage = () => {
                             <Camera size={14} /> Latest Snapshot
                         </div>
                     </div>
-                    <div style={{ position: 'relative', background: 'var(--bg-raised)', minHeight: 340, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ position: 'relative', background: 'var(--bg-raised)', height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                         {latestSnapshotUrl ? (
-                            <img src={latestSnapshotUrl} alt="Latest capture" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img src={latestSnapshotUrl} alt="Latest capture" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                         ) : (
                             <div style={{ textAlign: 'center', position: 'relative', zIndex: 2 }}>
                                 <div style={{ width: 64, height: 64, background: 'rgba(255,59,92,0.08)', border: '1px solid rgba(255,59,92,0.2)', borderRadius: 'var(--r-xl)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto var(--s4)', color: 'var(--crimson-core)' }}>

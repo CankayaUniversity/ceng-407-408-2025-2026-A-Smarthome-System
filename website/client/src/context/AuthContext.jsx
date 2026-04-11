@@ -20,23 +20,25 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            const u = session?.user ?? null;
-            setUser(u);
-            if (u) fetchProfile(u.id).finally(() => setLoading(false));
-            else setLoading(false);
-        });
+        let mounted = true;
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (_event, session) => {
+            (_event, session) => {
+                if (!mounted) return;
                 const u = session?.user ?? null;
                 setUser(u);
-                if (u) await fetchProfile(u.id);
-                else setProfile(null);
+                if (!u) setProfile(null);
+                setLoading(false);
+
+                if (u) {
+                    setTimeout(() => {
+                        fetchProfile(u.id).catch(e => console.error('[Auth] fetchProfile error:', e));
+                    }, 0);
+                }
             }
         );
 
-        return () => subscription.unsubscribe();
+        return () => { mounted = false; subscription.unsubscribe(); };
     }, [fetchProfile]);
 
     const login = async (email, password) => {

@@ -157,7 +157,7 @@ const HistoryPage = () => {
                     </div>
                 </div>
 
-                <div style={{ flex: 1, position: 'relative', minHeight: 250 }}>
+                <div style={{ flex: 1, position: 'relative', height: 300 }}>
                     {fetching ? (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 'var(--s3)' }}>
                             <div className="spinner" style={{ borderColor: `${color}40`, borderTopColor: color }} />
@@ -169,7 +169,7 @@ const HistoryPage = () => {
                             <div style={{ color: 'var(--text-muted)', fontWeight: 600 }}>No telemetry for this period</div>
                         </div>
                     ) : (
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height={300}>
                             <AreaChart data={chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorGrad" x1="0" y1="0" x2="0" y2="1">
