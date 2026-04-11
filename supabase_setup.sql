@@ -172,6 +172,34 @@ END $$;
 
 
 -- ================================================================
+-- Storage bucket policies (event-snapshots)
+-- Without these, the React client (anon key + authenticated role)
+-- cannot upload resident photos and the gateway cannot download them.
+-- Policies are RLS rules on storage.objects.
+-- ================================================================
+
+DROP POLICY IF EXISTS "event_snapshots_select" ON storage.objects;
+CREATE POLICY "event_snapshots_select"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'event-snapshots');
+
+DROP POLICY IF EXISTS "event_snapshots_insert" ON storage.objects;
+CREATE POLICY "event_snapshots_insert"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'event-snapshots' AND auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "event_snapshots_update" ON storage.objects;
+CREATE POLICY "event_snapshots_update"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'event-snapshots' AND auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "event_snapshots_delete" ON storage.objects;
+CREATE POLICY "event_snapshots_delete"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'event-snapshots' AND auth.role() = 'authenticated');
+
+
+-- ================================================================
 -- Auto-create profile on Supabase Auth signup
 -- ================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()

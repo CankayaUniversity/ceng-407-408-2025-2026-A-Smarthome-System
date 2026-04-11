@@ -59,7 +59,8 @@ const ResidentsPage = () => {
                 const { error: uploadErr } = await supabase.storage
                     .from('event-snapshots')
                     .upload(filePath, formImage, { contentType: formImage.type });
-                if (!uploadErr) photoPath = filePath;
+                if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}. Check bucket policies in Supabase Dashboard.`);
+                photoPath = filePath;
             }
 
             const { data, error: insertErr } = await supabase.from('residents').insert({
@@ -105,15 +106,21 @@ const ResidentsPage = () => {
         e.preventDefault();
         if (!captureImage) return;
         setCaptureSaving(true);
+        setError(null);
         try {
             const ext = captureImage.name.split('.').pop();
             const filePath = `resident_photos/${captureTarget.id}_${Date.now()}.${ext}`;
-            await supabase.storage.from('event-snapshots').upload(filePath, captureImage, { contentType: captureImage.type });
-            await supabase.from('residents').update({ photo_path: filePath }).eq('id', captureTarget.id);
+            const { error: uploadErr } = await supabase.storage.from('event-snapshots').upload(filePath, captureImage, { contentType: captureImage.type });
+            if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}. Check bucket policies in Supabase Dashboard.`);
+            const { error: updateErr } = await supabase.from('residents').update({ photo_path: filePath }).eq('id', captureTarget.id);
+            if (updateErr) throw updateErr;
             setCaptureSuccess(true);
             await fetchResidents();
             setTimeout(() => { setCaptureTarget(null); setCaptureSuccess(false); }, 1500);
-        } catch (err) { console.error(err); }
+        } catch (err) {
+            console.error(err);
+            setError(err.message || 'Photo upload failed');
+        }
         finally { setCaptureSaving(false); }
     };
 
@@ -241,6 +248,7 @@ const ResidentsPage = () => {
                             <h2>Upload Photo — {captureTarget.name}</h2>
                             <button className="modal-close" onClick={() => setCaptureTarget(null)}><X size={20} /></button>
                         </div>
+                        {error && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{error}</div>}
                         {captureSuccess ? (
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--s4)', padding: 'var(--s8) 0' }}>
                                 <CheckCircle size={48} style={{ color: 'var(--jade-core)' }} />
