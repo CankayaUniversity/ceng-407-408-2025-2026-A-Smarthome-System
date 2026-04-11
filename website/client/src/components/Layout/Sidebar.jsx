@@ -18,12 +18,13 @@ const NAV_ITEMS = [
     { to: '/history', icon: TrendingUp, label: 'Analytics' },
     { to: '/camera', icon: Camera, label: 'Surveillance' },
     { to: '/alerts', icon: ShieldAlert, label: 'Alerts' },
-    { to: '/residents', icon: Users, label: 'Residents', adminOnly: true },
+    // Face profiles for Pi matching — any logged-in household user can manage
+    { to: '/residents', icon: Users, label: 'Residents' },
     { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 const Sidebar = () => {
-    const { logout, user } = useAuth();
+    const { logout, user, profile } = useAuth();
 
     return (
         <aside className="sidebar animate-slide-left">
@@ -42,7 +43,7 @@ const Sidebar = () => {
             <nav className="sidebar-nav">
                 <div className="sidebar-section-label">Navigation</div>
                 {NAV_ITEMS.map(({ to, icon: Icon, label, adminOnly }) => {
-                    if (adminOnly && user?.role !== 'admin') return null;
+                    if (adminOnly && profile?.role !== 'admin') return null;
                     return (
                         <NavLink
                             key={to}
@@ -69,7 +70,7 @@ const Sidebar = () => {
                         <div className="sidebar-user-name" style={{
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                         }}>{user?.name}</div>
-                        <div className="sidebar-user-role">{user?.role}</div>
+                        <div className="sidebar-user-role">{profile?.role || 'authenticated'}</div>
                     </div>
                     <LogOut size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 </div>
