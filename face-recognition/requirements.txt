@@ -5,7 +5,7 @@ opencv-python
 numpy
 face_recognition
 requests
-mediapipe
+# mediapipe  # optional: ARM'de yok, face_recognition fallback kullanilir
 adafruit-circuitpython-dht
 adafruit-blinka
 python-dotenv
