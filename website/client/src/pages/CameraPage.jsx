@@ -56,11 +56,11 @@ const CameraPage = () => {
                             <Camera size={14} /> Latest Snapshot
                         </div>
                     </div>
-                    <div style={{ position: 'relative', background: 'var(--bg-raised)', height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    <div style={{ position: 'relative', background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                         {latestSnapshotUrl ? (
-                            <img src={latestSnapshotUrl} alt="Latest capture" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                            <img src={latestSnapshotUrl} alt="Latest capture" style={{ width: '100%', maxHeight: 420, objectFit: 'contain', display: 'block' }} />
                         ) : (
-                            <div style={{ textAlign: 'center', position: 'relative', zIndex: 2 }}>
+                            <div style={{ textAlign: 'center', position: 'relative', zIndex: 2, padding: 'var(--s10) var(--s4)' }}>
                                 <div style={{ width: 64, height: 64, background: 'rgba(255,59,92,0.08)', border: '1px solid rgba(255,59,92,0.2)', borderRadius: 'var(--r-xl)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto var(--s4)', color: 'var(--crimson-core)' }}>
                                     <Camera size={28} />
                                 </div>

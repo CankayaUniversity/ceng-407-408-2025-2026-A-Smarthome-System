@@ -306,6 +306,17 @@ def analyze_burst_and_upload(image_paths: list[str]):
 
 
 # ── Main loop ─────────────────────────────────────────────────
+_recognition_busy = threading.Event()
+
+
+def _safe_analyze(image_paths):
+    """Run recognition then clear the busy flag."""
+    try:
+        analyze_burst_and_upload(image_paths)
+    finally:
+        _recognition_busy.clear()
+
+
 def main():
     global last_capture_time
 
@@ -322,6 +333,7 @@ def main():
         return
 
     window_open = False
+    PREVIEW_FPS = 10
 
     try:
         while True:
@@ -347,23 +359,26 @@ def main():
                 window_open = True
 
                 now = time.time()
-                if now - last_capture_time > MOTION_COOLDOWN_SECONDS:
+                if (now - last_capture_time > MOTION_COOLDOWN_SECONDS
+                        and not _recognition_busy.is_set()):
                     last_capture_time = now
+                    _recognition_busy.set()
                     burst_images = camera.capture_burst(BURST_COUNT,
                                                        BURST_DELAY_SECONDS)
                     threading.Thread(
-                        target=analyze_burst_and_upload,
+                        target=_safe_analyze,
                         args=(burst_images,),
                         daemon=True,
                     ).start()
 
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                wait_ms = max(1, int(1000 / PREVIEW_FPS))
+                if cv2.waitKey(wait_ms) & 0xFF == ord("q"):
                     break
             else:
                 if window_open:
                     cv2.destroyAllWindows()
                     window_open = False
-                time.sleep(0.2)
+                time.sleep(0.5)
 
     except KeyboardInterrupt:
         logger.info("Stopping system...")
