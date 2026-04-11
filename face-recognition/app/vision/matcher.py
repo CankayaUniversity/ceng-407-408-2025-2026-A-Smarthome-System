@@ -3,8 +3,7 @@ from pathlib import Path
 from typing import Optional
 import math
 
-
-RESIDENTS_FILE = Path("app/storage/residents.json")
+from app.config import RESIDENTS_FILE
 
 
 class FaceMatcher:

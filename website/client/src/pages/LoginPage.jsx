@@ -28,25 +28,20 @@ const LoginPage = () => {
 
     return (
         <div className="auth-page">
-            {/* ── Left Visual Panel ── */}
             <div className="auth-visual">
                 <div className="auth-visual-content">
                     <div className="auth-visual-badge">
                         <Zap size={12} />
                         IoT Intelligence Platform
                     </div>
-
                     <div className="auth-visual-title">
                         Your home,<br />
                         <span>always aware.</span>
                     </div>
-
                     <p className="auth-visual-desc">
                         A unified command interface for your connected space.
                         Real-time awareness, predictive protection, seamless control.
                     </p>
-
-                    {/* Feature pills */}
                     <div style={{
                         display: 'flex', flexWrap: 'wrap', gap: 'var(--s3)',
                         justifyContent: 'center', marginTop: 'var(--s8)'
@@ -70,7 +65,6 @@ const LoginPage = () => {
                 </div>
             </div>
 
-            {/* ── Right Auth Panel ── */}
             <div className="auth-panel">
                 <div className="auth-form-wrap">
                     <div className="auth-eyebrow">Welcome back</div>
@@ -83,73 +77,34 @@ const LoginPage = () => {
                             : 'Join your smart home network.'}
                     </p>
 
-                    {error && (
-                        <div className="auth-error">{error}</div>
-                    )}
+                    {error && <div className="auth-error">{error}</div>}
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
                         {!isLogin && (
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label">Full Name</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    placeholder="John Doe"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    required={!isLogin}
-                                    disabled={loading}
-                                />
+                                <input type="text" className="form-input" placeholder="John Doe"
+                                    value={name} onChange={(e) => setName(e.target.value)}
+                                    required={!isLogin} disabled={loading} />
                             </div>
                         )}
-
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label">Email address</label>
-                            <input
-                                type="email"
-                                className="form-input"
-                                placeholder="you@example.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                disabled={loading}
-                            />
+                            <input type="email" className="form-input" placeholder="you@example.com"
+                                value={email} onChange={(e) => setEmail(e.target.value)}
+                                required disabled={loading} />
                         </div>
-
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label">Password</label>
-                            <input
-                                type="password"
-                                className="form-input"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                disabled={loading}
-                                minLength={6}
-                            />
+                            <input type="password" className="form-input" placeholder="••••••••"
+                                value={password} onChange={(e) => setPassword(e.target.value)}
+                                required disabled={loading} minLength={6} />
                         </div>
-
-                        <button
-                            type="submit"
-                            className="btn btn-primary w-full"
-                            disabled={loading}
-                            style={{
-                                justifyContent: 'center',
-                                height: 52,
-                                fontSize: 'var(--size-md)',
-                                marginTop: 'var(--s2)',
-                                borderRadius: 'var(--r-lg)',
-                            }}
-                        >
-                            {loading ? (
-                                <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                            ) : (
-                                <>
-                                    {isLogin ? 'Sign In' : 'Create Account'}
-                                    <ArrowRight size={18} />
-                                </>
-                            )}
+                        <button type="submit" className="btn btn-primary w-full" disabled={loading}
+                            style={{ justifyContent: 'center', height: 52, fontSize: 'var(--size-md)', marginTop: 'var(--s2)', borderRadius: 'var(--r-lg)' }}>
+                            {loading
+                                ? <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                                : <>{isLogin ? 'Sign In' : 'Create Account'}<ArrowRight size={18} /></>}
                         </button>
                     </form>
 
@@ -157,16 +112,8 @@ const LoginPage = () => {
                         <span style={{ color: 'var(--text-muted)' }}>
                             {isLogin ? "Don't have an account? " : "Already have an account? "}
                         </span>
-                        <button
-                            type="button"
-                            onClick={() => setIsLogin(!isLogin)}
-                            style={{
-                                background: 'none', border: 'none',
-                                color: 'var(--ember-core)', cursor: 'pointer',
-                                fontWeight: 600, fontFamily: 'var(--font-body)',
-                                fontSize: 'var(--size-sm)',
-                            }}
-                        >
+                        <button type="button" onClick={() => setIsLogin(!isLogin)}
+                            style={{ background: 'none', border: 'none', color: 'var(--ember-core)', cursor: 'pointer', fontWeight: 600, fontFamily: 'var(--font-body)', fontSize: 'var(--size-sm)' }}>
                             {isLogin ? 'Sign up' : 'Log in'}
                         </button>
                     </div>

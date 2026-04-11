@@ -1,7 +1,12 @@
+"""
+Camera module wrapping Picamera2 for both live preview and burst capture.
+"""
+
+import time
 from datetime import datetime
 from pathlib import Path
-import time
 
+import cv2
 from picamera2 import Picamera2
 
 from app.config import CAPTURE_DIR, IMAGE_WIDTH, IMAGE_HEIGHT
@@ -10,29 +15,37 @@ from app.config import CAPTURE_DIR, IMAGE_WIDTH, IMAGE_HEIGHT
 class CameraCapture:
     def __init__(self):
         CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-
         self.picam2 = Picamera2()
-        config = self.picam2.create_still_configuration(
+        config = self.picam2.create_preview_configuration(
             main={"size": (IMAGE_WIDTH, IMAGE_HEIGHT)}
         )
         self.picam2.configure(config)
         self.picam2.start()
 
-    def capture_frame(self) -> str:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        image_path = CAPTURE_DIR / f"capture_{timestamp}.jpg"
-        self.picam2.capture_file(str(image_path))
-        return str(image_path)
+    def capture_array(self):
+        """Return the current frame as a numpy array (RGB)."""
+        return self.picam2.capture_array()
 
-    def capture_burst(self, count: int = 3, delay: float = 0.3) -> list[str]:
-        image_paths = []
+    def capture_array_bgr(self):
+        """Return the current frame as a BGR numpy array (for OpenCV)."""
+        frame = self.picam2.capture_array()
+        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        for _ in range(count):
-            image_path = self.capture_frame()
-            image_paths.append(image_path)
-            time.sleep(delay)
-
-        return image_paths
+    def capture_burst(self, count: int = 3, delay: float = 0.25) -> list[str]:
+        """Capture a burst of images and save to disk. Returns file paths."""
+        paths = []
+        for i in range(count):
+            frame_bgr = self.capture_array_bgr()
+            timestamp = int(time.time() * 1000)
+            path = str(CAPTURE_DIR / f"motion_{timestamp}_{i}.jpg")
+            cv2.imwrite(path, frame_bgr)
+            paths.append(path)
+            if i < count - 1:
+                time.sleep(delay)
+        return paths
 
     def close(self):
-        self.picam2.stop()
+        try:
+            self.picam2.stop()
+        except Exception:
+            pass

@@ -1,8 +1,8 @@
 node_modules/
-website/server/node_modules/
 
 # Environment secrets
 .env
+.env.local
 
 # Cloud offline queue DB (runtime generated)
 data/cloud_queue.db
@@ -10,3 +10,10 @@ data/cloud_queue.db
 # Python cache
 __pycache__/
 *.pyc
+
+# Face recognition data (contains embeddings)
+face-recognition/app/storage/residents.json
+face-recognition/data/captures/
+
+# Build output
+website/client/dist/

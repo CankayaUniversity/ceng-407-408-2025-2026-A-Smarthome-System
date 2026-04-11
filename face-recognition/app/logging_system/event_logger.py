@@ -1,8 +1,7 @@
 import json
 from datetime import datetime
-from pathlib import Path
 
-LOG_FILE = Path("app/storage/events.jsonl")
+from app.config import EVENTS_LOG_PATH as LOG_FILE
 
 
 class EventLogger:

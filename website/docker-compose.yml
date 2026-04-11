@@ -1,52 +1,12 @@
-version: '3.8'
-
 services:
-  db:
-    image: postgres:15-alpine
-    container_name: smarthome_db
-    restart: always
-    environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password123}
-      POSTGRES_DB: ${DB_NAME:-smarthome_db}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-  backend:
-    build: 
-      context: ./server
-      dockerfile: Dockerfile
-    container_name: smarthome_backend
-    restart: always
-    depends_on:
-      - db
-    environment:
-      - NODE_ENV=production
-      - PORT=3001
-      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-password123}@db:5432/${DB_NAME:-smarthome_db}?schema=public
-      - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_123}
-      - CLIENT_URL=http://localhost
-    ports:
-      - "3001:3001"
-    volumes:
-      - backend_uploads:/app/uploads
-
   frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=http://localhost:3001/api
-        - VITE_SOCKET_URL=http://localhost:3001
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
     container_name: smarthome_frontend
     restart: always
-    depends_on:
-      - backend
     ports:
       - "80:80"
-
-volumes:
-  pgdata:
-  backend_uploads:

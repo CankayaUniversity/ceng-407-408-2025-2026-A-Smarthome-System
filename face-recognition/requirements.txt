@@ -1,7 +1,17 @@
-gpiozero #Raspberry Pi GPIO pinlerini (PIR sensör) kontrol etmek için
-picamera2 #Kamera akışını almak için
-opencv-python #Görüntü işleme ve yüz tespiti için
-numpy #Matris işlemleri için
-face_recognition #Yüz tanıma algoritması için embeddingler oluşturur
-requests #API istekleri için
-mediapipe # Face detection
+# Edge (run_edge.py) dependencies
+gpiozero
+picamera2
+opencv-python
+numpy
+face_recognition
+requests
+mediapipe
+adafruit-circuitpython-dht
+adafruit-blinka
+python-dotenv
+
+# Gateway (main.py) dependencies
+fastapi
+uvicorn[standard]
+pydantic
+supabase

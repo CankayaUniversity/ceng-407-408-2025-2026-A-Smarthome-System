@@ -1,8 +1,11 @@
 """
-Resident sync module — periodically pulls face profiles from the website backend
+Resident sync module — periodically pulls face profiles from the gateway
 and updates the local residents.json file used by FaceMatcher.
 
 Runs as a daemon background thread so it never blocks the main detection loop.
+
+NOTE: Requires a /api/v1/residents endpoint on the FastAPI gateway.
+Until that endpoint exists, sync will gracefully skip.
 """
 
 import json
@@ -10,88 +13,81 @@ import logging
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 
-from app.config import RESIDENTS_FILE, SYNC_RESIDENTS_INTERVAL
-from app.api.client import fetch_residents
+import requests
+
+from app.config import RESIDENTS_FILE, API_BASE_URL, DEVICE_ID
 
 logger = logging.getLogger(__name__)
 
+SYNC_INTERVAL = 60
+RESIDENTS_URL = f"{API_BASE_URL.rstrip('/')}/api/v1/residents"
+
+
+def _fetch_residents() -> list:
+    try:
+        response = requests.get(
+            RESIDENTS_URL,
+            params={"device_id": DEVICE_ID},
+            timeout=10,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("residents", [])
+        logger.warning("Resident fetch failed: %d", response.status_code)
+        return []
+    except requests.exceptions.ConnectionError:
+        logger.warning("Gateway unreachable — resident sync skipped")
+        return []
+    except Exception as exc:
+        logger.error("Resident sync fetch error: %s", exc)
+        return []
+
 
 def _build_local_residents(api_residents: list) -> dict:
-    """
-    Convert website API resident format to local residents.json format.
-
-    Website format (from /api/residents/sync):
-        { id, personId, name, imagePath, embedding, createdAt }
-
-    Local format (used by FaceMatcher):
-        {
-          person_id, name, is_active, created_at,
-          samples: [{ image_path, embedding }]
-        }
-    """
     local = []
     for r in api_residents:
         embedding = r.get("embedding")
         if not embedding:
-            continue  # Skip profiles without embeddings — Pi can't use them
-
+            continue
         local.append({
-            "person_id": r.get("personId") or r["id"],  # Prefer Pi's original person_id
+            "person_id": r.get("personId") or r.get("person_id") or r["id"],
             "name": r["name"],
             "is_active": True,
             "created_at": r.get("createdAt", datetime.now().isoformat()),
-            "samples": [
-                {
-                    "image_path": r.get("imagePath") or "",
-                    "embedding": embedding,
-                }
-            ],
+            "samples": [{
+                "image_path": r.get("imagePath", ""),
+                "embedding": embedding,
+            }],
         })
-
     return {"residents": local}
 
 
 def _sync_once():
-    """Run a single sync cycle: fetch from API → update local file."""
-    logger.info("Resident sync: fetching from backend…")
-    api_residents = fetch_residents()
-
+    logger.info("Resident sync: fetching from gateway...")
+    api_residents = _fetch_residents()
     if not api_residents:
-        logger.info("Resident sync: no residents returned (backend may be offline)")
+        logger.info("Resident sync: no residents returned")
         return
 
     local_data = _build_local_residents(api_residents)
-
     RESIDENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(RESIDENTS_FILE, "w", encoding="utf-8") as f:
         json.dump(local_data, f, indent=2, ensure_ascii=False)
 
-    logger.info(
-        "Resident sync: updated %d resident(s) in %s",
-        len(local_data["residents"]),
-        RESIDENTS_FILE,
-    )
+    logger.info("Resident sync: updated %d resident(s)", len(local_data["residents"]))
 
 
-def start_resident_sync_thread():
-    """
-    Start a daemon thread that syncs residents every SYNC_RESIDENTS_INTERVAL seconds.
-    Call this once at startup from main.py.
-    """
-
+def start_resident_sync_thread(interval: int = SYNC_INTERVAL):
     def _loop():
         while True:
             try:
                 _sync_once()
             except Exception as exc:
                 logger.error("Resident sync error: %s", exc)
-            time.sleep(SYNC_RESIDENTS_INTERVAL)
+            time.sleep(interval)
 
     thread = threading.Thread(target=_loop, name="ResidentSyncThread", daemon=True)
     thread.start()
-    logger.info(
-        "Resident sync thread started (interval: %ds)", SYNC_RESIDENTS_INTERVAL
-    )
+    logger.info("Resident sync thread started (interval: %ds)", interval)
     return thread

@@ -1,104 +1,88 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react';
-import api from '../services/api';
+import { createContext, useState, useEffect, useCallback } from 'react';
+import { supabase } from '../services/supabase';
 
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // Initialize Auth State from backend
-    const initAuth = useCallback(async () => {
-        if (!token) {
-            setLoading(false);
-            return;
-        }
-
-        try {
-            setLoading(true);
-            const res = await api.get('/auth/me');
-            setUser(res.data.user);
-            localStorage.setItem('user', JSON.stringify(res.data.user));
-        } catch (err) {
-            console.error('Failed to initialize auth', err);
-            logout(); // clear invalid token
-        } finally {
-            setLoading(false);
-        }
-    }, [token]);
+    const fetchProfile = useCallback(async (userId) => {
+        const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
+        setProfile(data);
+        return data;
+    }, []);
 
     useEffect(() => {
-        initAuth();
-    }, [initAuth]);
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            const u = session?.user ?? null;
+            setUser(u);
+            if (u) fetchProfile(u.id).finally(() => setLoading(false));
+            else setLoading(false);
+        });
 
-    // Login handler
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+            async (_event, session) => {
+                const u = session?.user ?? null;
+                setUser(u);
+                if (u) await fetchProfile(u.id);
+                else setProfile(null);
+            }
+        );
+
+        return () => subscription.unsubscribe();
+    }, [fetchProfile]);
+
     const login = async (email, password) => {
         try {
             setError(null);
             setLoading(true);
-            const res = await api.post('/auth/login', { email, password });
-
-            const { token: newToken, user: userData } = res.data;
-
-            localStorage.setItem('token', newToken);
-            localStorage.setItem('user', JSON.stringify(userData));
-
-            setToken(newToken);
-            setUser(userData);
-
+            const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+            if (err) { setError(err.message); return false; }
             return true;
-        } catch (err) {
-            setError(err.response?.data?.error || 'Login failed');
-            return false;
         } finally {
             setLoading(false);
         }
     };
 
-    // Register handler
     const register = async (name, email, password) => {
         try {
             setError(null);
             setLoading(true);
-            const res = await api.post('/auth/register', { name, email, password });
-
-            const { token: newToken, user: userData } = res.data;
-
-            localStorage.setItem('token', newToken);
-            localStorage.setItem('user', JSON.stringify(userData));
-
-            setToken(newToken);
-            setUser(userData);
-
+            const { error: err } = await supabase.auth.signUp({
+                email,
+                password,
+                options: { data: { name } },
+            });
+            if (err) { setError(err.message); return false; }
             return true;
-        } catch (err) {
-            setError(err.response?.data?.error || 'Registration failed');
-            return false;
         } finally {
             setLoading(false);
         }
     };
 
-    // Logout handler
-    const logout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setToken(null);
+    const logout = async () => {
+        await supabase.auth.signOut();
         setUser(null);
-        window.location.href = '/login'; // Redirect to login
+        setProfile(null);
+        window.location.href = '/login';
     };
 
     const value = {
         user,
-        token,
+        profile,
         loading,
         error,
         login,
         register,
         logout,
-        isAuthenticated: !!user && !!token,
+        isAuthenticated: !!user,
     };
 
     return (
