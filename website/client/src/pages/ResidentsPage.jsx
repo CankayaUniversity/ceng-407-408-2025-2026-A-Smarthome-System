@@ -31,6 +31,10 @@ const ResidentsPage = () => {
     const handleAdd = async (e) => {
         e.preventDefault();
         if (!formName.trim()) return;
+        if (!user?.id) {
+            setError('You must be signed in to add a resident.');
+            return;
+        }
         setSaving(true); setError(null);
         try {
             let photoPath = null;

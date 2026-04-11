@@ -21,6 +21,23 @@ ALTER TABLE residents ADD COLUMN IF NOT EXISTS person_id TEXT;
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS photo_path TEXT;
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS embedding JSONB;
 
+-- ── residents.user_id must reference Supabase Auth (React login), not legacy public.users ──
+-- Error without this: insert violates foreign key constraint "residents_user_id_fkey"
+ALTER TABLE residents DROP CONSTRAINT IF EXISTS residents_user_id_fkey;
+
+-- Orphan links (old public.users ids, etc.): clear instead of deleting resident rows
+-- (avoids FK errors from event_faces → residents)
+ALTER TABLE residents ALTER COLUMN user_id DROP NOT NULL;
+
+UPDATE residents
+SET user_id = NULL
+WHERE user_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = residents.user_id);
+
+ALTER TABLE residents
+  ADD CONSTRAINT residents_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
 
 -- ================================================================
 -- Row Level Security (RLS)
