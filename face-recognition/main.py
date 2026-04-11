@@ -1,6 +1,9 @@
 import os
 import json
 import logging
+import threading
+import tempfile
+import time
 from uuid import uuid4
 from pathlib import Path
 from typing import Optional
@@ -52,6 +55,86 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+RESIDENT_EMBEDDING_REFRESH_SEC = int(os.getenv("RESIDENT_EMBEDDING_REFRESH_SEC", "90"))
+
+
+def _run_resident_embedding_backfill_pass() -> None:
+    """
+    For each resident with a storage photo_path but missing embedding, download the
+    file, compute a face_recognition vector on the gateway (Pi), and write JSONB.
+    """
+    from app.vision.embedder import FaceEmbedder
+
+    embedder = FaceEmbedder()
+    rows = (
+        supabase.table("residents")
+        .select("id, name, person_id, photo_path, embedding")
+        .execute()
+        .data
+        or []
+    )
+    for row in rows:
+        path = row.get("photo_path")
+        if not path:
+            continue
+        emb = row.get("embedding")
+        if isinstance(emb, list) and len(emb) > 0:
+            continue
+        try:
+            file_bytes = supabase.storage.from_(SNAPSHOT_BUCKET).download(path)
+        except Exception as exc:
+            logger.warning("Resident photo download failed (%s): %s", path, exc)
+            continue
+        suffix = Path(path).suffix.lower() or ".jpg"
+        if suffix not in (".jpg", ".jpeg", ".png", ".webp"):
+            suffix = ".jpg"
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+            with os.fdopen(fd, "wb") as tmp_file:
+                tmp_file.write(file_bytes)
+            vec = embedder.get_embedding(tmp_path)
+        except ValueError as exc:
+            logger.warning("No usable face in resident photo %s: %s", path, exc)
+            continue
+        except Exception:
+            logger.exception("Embedding failed for resident photo %s", path)
+            continue
+        finally:
+            if tmp_path:
+                try:
+                    Path(tmp_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        try:
+            supabase.table("residents").update({"embedding": vec}).eq("id", row["id"]).execute()
+            logger.info("Resident embedding stored: %s (%s)", row.get("name"), row["id"])
+        except Exception:
+            logger.exception("Failed to update embedding for resident %s", row["id"])
+
+
+def _resident_embedding_daemon() -> None:
+    time.sleep(3)
+    while True:
+        try:
+            _run_resident_embedding_backfill_pass()
+        except Exception:
+            logger.exception("Resident embedding backfill pass failed")
+        time.sleep(max(30, RESIDENT_EMBEDDING_REFRESH_SEC))
+
+
+@app.on_event("startup")
+def _start_resident_embedding_thread() -> None:
+    threading.Thread(
+        target=_resident_embedding_daemon,
+        name="ResidentEmbeddingBackfill",
+        daemon=True,
+    ).start()
+    logger.info(
+        "Resident embedding backfill thread started (interval ~%ss)",
+        RESIDENT_EMBEDDING_REFRESH_SEC,
+    )
 
 
 # -------------------------------------------------
@@ -168,6 +251,39 @@ def receive_heartbeat(data: Heartbeat):
         raise
     except Exception as e:
         logger.exception("Heartbeat failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/residents")
+def list_residents_for_edge(device_id: str = Query(...)):
+    """
+    Returns residents with non-empty embeddings for the edge FaceMatcher sync
+    (see app.api.resident_sync).
+    """
+    try:
+        ensure_device_exists(device_id)
+        response = (
+            supabase.table("residents")
+            .select("id, name, person_id, embedding")
+            .execute()
+        )
+        out = []
+        for r in response.data or []:
+            emb = r.get("embedding")
+            if not emb or not isinstance(emb, list) or len(emb) == 0:
+                continue
+            rid = r["id"]
+            out.append({
+                "id": rid,
+                "name": r.get("name") or "Resident",
+                "person_id": r.get("person_id") or str(rid),
+                "embedding": emb,
+            })
+        return {"residents": out}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("List residents failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

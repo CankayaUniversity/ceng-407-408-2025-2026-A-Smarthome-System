@@ -114,7 +114,7 @@ const DashboardPage = () => {
 
             const { data: camEvts } = await supabase
                 .from('camera_events')
-                .select('*, event_faces(*, residents(name))')
+                .select('*, event_faces(*, residents(name, id))')
                 .order('created_at', { ascending: false })
                 .limit(1);
             if (camEvts?.length > 0) setLastCameraEvent(camEvts[0]);
@@ -165,6 +165,7 @@ const DashboardPage = () => {
 
     const lastFace = lastCameraEvent?.event_faces?.[0];
     const lastResult = lastFace?.classification || 'unknown';
+    const lastResidentName = lastFace?.residents?.name;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s6)' }}>
@@ -184,7 +185,7 @@ const DashboardPage = () => {
                     <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.2) 60%, transparent 100%)' }} />
                     <div style={{ position: 'absolute', top: 'var(--s4)', left: 'var(--s4)', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: 'var(--r-full)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)' }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff3b5c', boxShadow: '0 0 8px #ff3b5c', animation: 'alertBreath 2s infinite' }} />
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'white', letterSpacing: '0.05em' }}>LIVE CAMERA</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'white', letterSpacing: '0.05em' }}>LAST SNAPSHOT</span>
                     </div>
                     <div style={{ position: 'relative', padding: 'var(--s6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                         <div>
@@ -197,7 +198,7 @@ const DashboardPage = () => {
                             <div style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', padding: 'var(--s3)', borderRadius: 'var(--r-lg)', textAlign: 'center' }}>
                                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', marginBottom: 4 }}>Last Event</div>
                                 <div style={{ color: lastResult === 'resident' ? '#00e5a0' : '#ff3b5c', fontWeight: 700, fontSize: 'var(--size-sm)' }}>
-                                    {lastResult === 'resident' ? 'Resident' : 'Unknown Person'}
+                                    {lastResult === 'resident' ? (lastResidentName || 'Resident') : 'Unknown Person'}
                                 </div>
                             </div>
                         )}

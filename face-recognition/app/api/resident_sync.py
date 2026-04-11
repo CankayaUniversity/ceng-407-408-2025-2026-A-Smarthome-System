@@ -13,6 +13,7 @@ import logging
 import threading
 import time
 from datetime import datetime
+from typing import Optional
 
 import requests
 
@@ -24,7 +25,8 @@ SYNC_INTERVAL = 60
 RESIDENTS_URL = f"{API_BASE_URL.rstrip('/')}/api/v1/residents"
 
 
-def _fetch_residents() -> list:
+def _fetch_residents() -> Optional[list]:
+    """Returns None on transport/HTTP error; empty list means server has no embeddings."""
     try:
         response = requests.get(
             RESIDENTS_URL,
@@ -35,13 +37,13 @@ def _fetch_residents() -> list:
             data = response.json()
             return data.get("residents", [])
         logger.warning("Resident fetch failed: %d", response.status_code)
-        return []
+        return None
     except requests.exceptions.ConnectionError:
         logger.warning("Gateway unreachable — resident sync skipped")
-        return []
+        return None
     except Exception as exc:
         logger.error("Resident sync fetch error: %s", exc)
-        return []
+        return None
 
 
 def _build_local_residents(api_residents: list) -> dict:
@@ -66,8 +68,15 @@ def _build_local_residents(api_residents: list) -> dict:
 def _sync_once():
     logger.info("Resident sync: fetching from gateway...")
     api_residents = _fetch_residents()
+    if api_residents is None:
+        return
+
     if not api_residents:
-        logger.info("Resident sync: no residents returned")
+        local_data = {"residents": []}
+        RESIDENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(RESIDENTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(local_data, f, indent=2, ensure_ascii=False)
+        logger.info("Resident sync: cleared local file (no residents with embeddings)")
         return
 
     local_data = _build_local_residents(api_residents)

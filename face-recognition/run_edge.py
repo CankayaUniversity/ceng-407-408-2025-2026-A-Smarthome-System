@@ -44,6 +44,7 @@ from app.api.gateway_client import (
     upload_intelligent_snapshot,
     send_heartbeat,
 )
+from app.api.resident_sync import start_resident_sync_thread
 
 logging.basicConfig(
     level=logging.INFO,
@@ -321,6 +322,9 @@ def main():
     global last_capture_time
 
     logger.info("Initializing Smart Home Edge Core...")
+
+    sync_interval = int(os.environ.get("SYNC_RESIDENTS_INTERVAL", "60"))
+    start_resident_sync_thread(interval=sync_interval)
 
     threading.Thread(target=dht_reading_thread, daemon=True).start()
     threading.Thread(target=digital_sensor_thread, daemon=True).start()

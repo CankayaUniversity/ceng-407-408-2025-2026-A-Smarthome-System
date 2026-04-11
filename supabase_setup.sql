@@ -90,6 +90,41 @@ DROP POLICY IF EXISTS "event_faces_select_auth" ON event_faces;
 CREATE POLICY "event_faces_select_auth"
   ON event_faces FOR SELECT USING (auth.role() = 'authenticated');
 
+-- Optional: resident_faces (used by Residents UI when present)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'resident_faces'
+  ) THEN
+    ALTER TABLE resident_faces ENABLE ROW LEVEL SECURITY;
+    EXECUTE 'DROP POLICY IF EXISTS "resident_faces_select_auth" ON resident_faces';
+    EXECUTE $policy$
+      CREATE POLICY "resident_faces_select_auth"
+        ON resident_faces FOR SELECT USING (auth.role() = 'authenticated')
+    $policy$;
+    EXECUTE 'DROP POLICY IF EXISTS "resident_faces_insert_auth" ON resident_faces';
+    EXECUTE $policy$
+      CREATE POLICY "resident_faces_insert_auth"
+        ON resident_faces FOR INSERT WITH CHECK (auth.role() = 'authenticated')
+    $policy$;
+    EXECUTE 'DROP POLICY IF EXISTS "resident_faces_update_auth" ON resident_faces';
+    EXECUTE $policy$
+      CREATE POLICY "resident_faces_update_auth"
+        ON resident_faces FOR UPDATE USING (auth.role() = 'authenticated')
+    $policy$;
+    EXECUTE 'DROP POLICY IF EXISTS "resident_faces_delete_auth" ON resident_faces';
+    EXECUTE $policy$
+      CREATE POLICY "resident_faces_delete_auth"
+        ON resident_faces FOR DELETE USING (auth.role() = 'authenticated')
+    $policy$;
+  END IF;
+END $$;
+
+-- Verify RLS policies (run in SQL Editor; expect one row per policy above)
+-- SELECT schemaname, tablename, policyname, cmd, permissive
+-- FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename, policyname;
+
 
 -- ================================================================
 -- Enable Realtime for key tables

@@ -9,13 +9,13 @@ const LiveCamera = ({ streamUrl, isOnline, fallbackImage }) => {
             <div className="card-header" style={{ padding: 'var(--space-4) var(--space-5)', margin: 0, borderBottom: '1px solid var(--color-border)' }}>
                 <div className="flex items-center gap-2">
                     <Camera size={18} className="text-muted" />
-                    <h3 className="card-title" style={{ margin: 0 }}>Live Feed</h3>
+                    <h3 className="card-title" style={{ margin: 0 }}>Camera</h3>
                 </div>
                 <div className="flex items-center gap-3">
                     {isOnline ? (
-                        <span className="badge badge-success">Live</span>
+                        <span className="badge badge-success">Stream</span>
                     ) : (
-                        <span className="badge badge-warning text-xs">Offline</span>
+                        <span className="badge badge-warning text-xs">Snapshot / offline</span>
                     )}
                     <button className="btn btn-sm btn-secondary" style={{ padding: '4px' }}>
                         <Maximize2 size={16} />
