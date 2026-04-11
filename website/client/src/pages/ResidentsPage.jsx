@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle } from 'lucide-react';
+import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle, RefreshCw } from 'lucide-react';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
 
@@ -19,11 +19,26 @@ const ResidentsPage = () => {
     const [capturePreview, setCapturePreview] = useState(null);
     const [captureSaving, setCaptureSaving] = useState(false);
     const [captureSuccess, setCaptureSuccess] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const loadResidentsRows = async () => {
+        const { data } = await supabase.from('residents').select('*, resident_faces(*)').order('created_at', { ascending: false });
+        return data || [];
+    };
 
     const fetchResidents = async () => {
-        const { data } = await supabase.from('residents').select('*, resident_faces(*)').order('created_at', { ascending: false });
-        setResidents(data || []);
+        setLoading(true);
+        setResidents(await loadResidentsRows());
         setLoading(false);
+    };
+
+    const handleRefreshList = async () => {
+        setRefreshing(true);
+        try {
+            setResidents(await loadResidentsRows());
+        } finally {
+            setRefreshing(false);
+        }
     };
 
     useEffect(() => { fetchResidents(); }, []);
@@ -113,11 +128,18 @@ const ResidentsPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--s8)', paddingBottom: 'var(--s6)', borderBottom: '1px solid var(--border-dim)' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Residents</h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)' }}>
-                        Authorized faces for AI recognition. Profiles sync to your Pi — there is no approval step; status reflects whether a face vector exists in the database yet.
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)', maxWidth: 720, lineHeight: 1.5 }}>
+                        Photos go to Supabase Storage and <code style={{ fontSize: '0.85em' }}>residents.photo_path</code> immediately.
+                        The face vector is stored in <code style={{ fontSize: '0.85em' }}>residents.embedding</code> only after the <strong>Pi FastAPI gateway</strong> downloads the image and runs face encoding (not the second terminal / edge).
+                        No admin approval — &quot;Encoding&quot; means embedding not written yet.
                     </p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setShowModal(true)}><UserPlus size={16} /> Add Resident</button>
+                <div style={{ display: 'flex', gap: 'var(--s2)', flexShrink: 0 }}>
+                    <button type="button" className="btn btn-ghost" onClick={handleRefreshList} disabled={refreshing || loading} title="Reload rows from Supabase">
+                        {refreshing ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <><RefreshCw size={16} /> Refresh</>}
+                    </button>
+                    <button className="btn btn-primary" onClick={() => setShowModal(true)}><UserPlus size={16} /> Add Resident</button>
+                </div>
             </div>
 
             {loading ? (
@@ -147,7 +169,7 @@ const ResidentsPage = () => {
                             badgeContent = (<><ShieldCheck size={10} />&nbsp;Active</>);
                             badgeClass = 'badge-success';
                         } else if (hasPhoto) {
-                            statusLine = 'Photo saved. With the Pi gateway (uvicorn) running, a face vector is built automatically within about 1–2 minutes. Refresh this page to update.';
+                            statusLine = 'Photo is already in Supabase. Only the uvicorn gateway (port 8000) writes residents.embedding — first scan ~3s after it starts, then on a timer. Use Refresh after the Pi log shows success, or POST /api/v1/residents/backfill-embeddings (see project README).';
                             badgeContent = 'Encoding';
                             badgeClass = 'badge-warning';
                         } else {

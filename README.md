@@ -104,3 +104,17 @@ python run_edge.py
 
 - `run_edge.py` and `main.py` run on the same Pi but serve different purposes: `run_edge.py` reads sensors and captures images, while `main.py` is the HTTP gateway to Supabase.
 - The website connects directly to Supabase (not to the Pi) for all data queries and real-time subscriptions.
+
+### Resident photos and `embedding` (troubleshooting)
+
+1. The React app uploads the image to **Storage** and sets `residents.photo_path` in Supabase (immediate).
+2. **`residents.embedding` is filled only by `main.py` (uvicorn)** on a background timer (`RESIDENT_EMBEDDING_REFRESH_SEC`, default 45s; first pass ~3s after startup). `run_edge.py` does **not** write embeddings.
+3. **Verify in Supabase:** Table Editor → `residents` → check `embedding` (JSON array) for your row.
+4. **Verify on the Pi:** In the uvicorn terminal, look for `Resident embedding stored` or `Resident embedding pass: ...` summary lines; warnings mean download/no-face/update failures.
+5. **Force one pass without waiting:**
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/api/v1/residents/backfill-embeddings?device_id=YOUR_DEVICE_UUID"
+```
+
+Use the same `DEVICE_ID` as in `.env`.

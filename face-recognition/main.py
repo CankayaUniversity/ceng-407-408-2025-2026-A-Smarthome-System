@@ -56,15 +56,29 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-RESIDENT_EMBEDDING_REFRESH_SEC = int(os.getenv("RESIDENT_EMBEDDING_REFRESH_SEC", "90"))
+RESIDENT_EMBEDDING_REFRESH_SEC = int(os.getenv("RESIDENT_EMBEDDING_REFRESH_SEC", "45"))
 
 
-def _run_resident_embedding_backfill_pass() -> None:
+def _run_resident_embedding_backfill_pass() -> dict:
     """
     For each resident with a storage photo_path but missing embedding, download the
-    file, compute a face_recognition vector on the gateway (Pi), and write JSONB.
+    file, compute a face_recognition vector on the gateway (Pi), and write JSONB
+    on `residents.embedding`. Returns a small summary for logs and the HTTP trigger.
     """
     from app.vision.embedder import FaceEmbedder
+
+    summary = {
+        "rows_total": 0,
+        "skipped_no_photo": 0,
+        "skipped_already_embedded": 0,
+        "attempted": 0,
+        "embedded_ok": 0,
+        "failed_download": 0,
+        "failed_no_face": 0,
+        "failed_update": 0,
+        "failed_other": 0,
+        "updated_resident_ids": [],
+    }
 
     embedder = FaceEmbedder()
     rows = (
@@ -74,16 +88,22 @@ def _run_resident_embedding_backfill_pass() -> None:
         .data
         or []
     )
+    summary["rows_total"] = len(rows)
+
     for row in rows:
         path = row.get("photo_path")
         if not path:
+            summary["skipped_no_photo"] += 1
             continue
         emb = row.get("embedding")
         if isinstance(emb, list) and len(emb) > 0:
+            summary["skipped_already_embedded"] += 1
             continue
+        summary["attempted"] += 1
         try:
             file_bytes = supabase.storage.from_(SNAPSHOT_BUCKET).download(path)
         except Exception as exc:
+            summary["failed_download"] += 1
             logger.warning("Resident photo download failed (%s): %s", path, exc)
             continue
         suffix = Path(path).suffix.lower() or ".jpg"
@@ -96,9 +116,11 @@ def _run_resident_embedding_backfill_pass() -> None:
                 tmp_file.write(file_bytes)
             vec = embedder.get_embedding(tmp_path)
         except ValueError as exc:
+            summary["failed_no_face"] += 1
             logger.warning("No usable face in resident photo %s: %s", path, exc)
             continue
         except Exception:
+            summary["failed_other"] += 1
             logger.exception("Embedding failed for resident photo %s", path)
             continue
         finally:
@@ -109,9 +131,27 @@ def _run_resident_embedding_backfill_pass() -> None:
                     pass
         try:
             supabase.table("residents").update({"embedding": vec}).eq("id", row["id"]).execute()
+            summary["embedded_ok"] += 1
+            summary["updated_resident_ids"].append(str(row["id"]))
             logger.info("Resident embedding stored: %s (%s)", row.get("name"), row["id"])
         except Exception:
+            summary["failed_update"] += 1
             logger.exception("Failed to update embedding for resident %s", row["id"])
+
+    logger.info(
+        "Resident embedding pass: total=%s attempted=%s ok=%s "
+        "(skip_photo=%s skip_done=%s fail_dl=%s fail_face=%s fail_up=%s fail_other=%s)",
+        summary["rows_total"],
+        summary["attempted"],
+        summary["embedded_ok"],
+        summary["skipped_no_photo"],
+        summary["skipped_already_embedded"],
+        summary["failed_download"],
+        summary["failed_no_face"],
+        summary["failed_update"],
+        summary["failed_other"],
+    )
+    return summary
 
 
 def _resident_embedding_daemon() -> None:
@@ -121,7 +161,7 @@ def _resident_embedding_daemon() -> None:
             _run_resident_embedding_backfill_pass()
         except Exception:
             logger.exception("Resident embedding backfill pass failed")
-        time.sleep(max(30, RESIDENT_EMBEDDING_REFRESH_SEC))
+        time.sleep(max(15, RESIDENT_EMBEDDING_REFRESH_SEC))
 
 
 @app.on_event("startup")
@@ -284,6 +324,23 @@ def list_residents_for_edge(device_id: str = Query(...)):
         raise
     except Exception as e:
         logger.exception("List residents failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/residents/backfill-embeddings")
+def trigger_resident_embedding_backfill(device_id: str = Query(...)):
+    """
+    Run one embedding pass immediately (same logic as the background thread).
+    Use from the Pi: curl -X POST "http://127.0.0.1:8000/api/v1/residents/backfill-embeddings?device_id=YOUR_DEVICE_UUID"
+    """
+    try:
+        ensure_device_exists(device_id)
+        summary = _run_resident_embedding_backfill_pass()
+        return {"status": "ok", **summary}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Manual embedding backfill failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
