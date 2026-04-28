@@ -80,6 +80,58 @@ function MiniSensorCard({ sensor }) {
     );
 }
 
+const STAT_CARD = {
+    display: 'flex', flexDirection: 'column', gap: 'var(--s3)', padding: 'var(--s4) var(--s5)',
+};
+const STAT_HEAD = {
+    display: 'flex', alignItems: 'center', gap: 8,
+};
+const STAT_TITLE = { fontSize: 'var(--size-sm)', fontWeight: 600 };
+const STAT_GRID = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s2)', marginTop: 'auto' };
+const STAT_TILE = (alert) => ({
+    background: alert ? 'rgba(255,59,92,0.08)' : 'var(--bg-base)',
+    border: alert ? '1px solid rgba(255,59,92,0.25)' : '1px solid transparent',
+    padding: '8px 10px',
+    borderRadius: 'var(--r-md)',
+});
+const STAT_LABEL = { color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 };
+
+function HazardCard({ icon: Icon, label, sensors, accent, alertText }) {
+    const active = sensors.filter(s => parseFloat(s.numeric_value) > 0).length;
+    const total = sensors.length;
+    const max = sensors.reduce((m, s) => Math.max(m, parseFloat(s.numeric_value) || 0), 0);
+    const isAlert = active > 0;
+    return (
+        <div className="card" style={{
+            ...STAT_CARD,
+            background: isAlert ? 'rgba(255,59,92,0.06)' : 'var(--bg-surface)',
+            borderColor: isAlert ? 'rgba(255,59,92,0.25)' : 'var(--border-soft)',
+        }}>
+            <div style={STAT_HEAD}>
+                <div style={{ width: 30, height: 30, borderRadius: 'var(--r-md)', background: `${accent}15`, color: isAlert ? '#ff3b5c' : accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon size={15} />
+                </div>
+                <h3 style={STAT_TITLE}>{label}</h3>
+                {isAlert && <span className="badge badge-danger" style={{ marginLeft: 'auto' }}>{alertText}</span>}
+            </div>
+            <div style={STAT_GRID}>
+                <div style={STAT_TILE(isAlert)}>
+                    <div style={STAT_LABEL}>Active</div>
+                    <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: isAlert ? '#ff3b5c' : 'var(--text-primary)' }}>
+                        {active}<span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>/{total}</span>
+                    </div>
+                </div>
+                <div style={STAT_TILE(false)}>
+                    <div style={STAT_LABEL}>Peak</div>
+                    <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: isAlert ? '#ff3b5c' : accent }}>
+                        {total > 0 ? max.toFixed(1) : '\u2014'}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 const DashboardPage = () => {
     const navigate = useNavigate();
     const { subscribe } = useRealtime();
@@ -148,6 +200,8 @@ const DashboardPage = () => {
 
     const tempSensors = sensors.filter(s => s.sensor_type === 'temperature');
     const humSensors = sensors.filter(s => s.sensor_type === 'humidity');
+    const smokeSensors = sensors.filter(s => s.sensor_type === 'smoke');
+    const waterSensors = sensors.filter(s => s.sensor_type === 'water');
     const avgTemp = tempSensors.reduce((a, s) => a + (s.numeric_value || 0), 0) / (tempSensors.length || 1);
     const avgHum = humSensors.reduce((a, s) => a + (s.numeric_value || 0), 0) / (humSensors.length || 1);
     const activeMotions = sensors.filter(s => s.sensor_type === 'motion' && s.numeric_value === 1).length;
@@ -168,7 +222,7 @@ const DashboardPage = () => {
     const lastResidentName = lastFace?.residents?.name;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s6)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Dashboard</h1>
@@ -179,25 +233,35 @@ const DashboardPage = () => {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--s5)' }}>
-                <div className="card" onClick={() => navigate('/camera')}
-                    style={{ gridColumn: '1 / -1', padding: 0, overflow: 'hidden', position: 'relative', cursor: 'pointer', minHeight: 240, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', backgroundImage: snapshotUrl ? `url(${snapshotUrl})` : 'none', backgroundColor: '#111318', backgroundSize: 'cover', backgroundPosition: 'center' }}>
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.2) 60%, transparent 100%)' }} />
-                    <div style={{ position: 'absolute', top: 'var(--s4)', left: 'var(--s4)', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: 'var(--r-full)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff3b5c', boxShadow: '0 0 8px #ff3b5c', animation: 'alertBreath 2s infinite' }} />
+            <div className="dash-overview-grid">
+                <div className="card dash-camera-card" onClick={() => navigate('/camera')}
+                    style={{ padding: 0, overflow: 'hidden', position: 'relative', cursor: 'pointer', background: '#0a0c10' }}>
+                    {snapshotUrl ? (
+                        <img
+                            src={snapshotUrl}
+                            alt="Last camera snapshot"
+                            loading="lazy"
+                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+                        />
+                    ) : (
+                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, var(--bg-elevated), var(--bg-base))' }} />
+                    )}
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.05) 100%)', pointerEvents: 'none' }} />
+                    <div style={{ position: 'absolute', top: 'var(--s3)', left: 'var(--s3)', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.55)', padding: '4px 10px', borderRadius: 'var(--r-full)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#ff3b5c', boxShadow: '0 0 8px #ff3b5c', animation: 'alertBreath 2s infinite' }} />
                         <span style={{ fontSize: 10, fontWeight: 700, color: 'white', letterSpacing: '0.05em' }}>LAST SNAPSHOT</span>
                     </div>
-                    <div style={{ position: 'relative', padding: 'var(--s6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                        <div>
-                            <h2 style={{ color: 'white', fontSize: 'var(--size-xl)', fontWeight: 700, marginBottom: 'var(--s1)' }}>Front Door Surveillance</h2>
-                            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 'var(--size-sm)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Camera size={14} /> AI Face Recognition Active
+                    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 'var(--s4) var(--s5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 'var(--s3)' }}>
+                        <div style={{ minWidth: 0 }}>
+                            <h2 style={{ color: 'white', fontSize: 'var(--size-md)', fontWeight: 700, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Front Door Surveillance</h2>
+                            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 'var(--size-xs)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Camera size={12} /> AI Face Recognition Active
                             </p>
                         </div>
                         {lastCameraEvent && (
-                            <div style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', padding: 'var(--s3)', borderRadius: 'var(--r-lg)', textAlign: 'center' }}>
-                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', marginBottom: 4 }}>Last Event</div>
-                                <div style={{ color: lastResult === 'resident' ? '#00e5a0' : '#ff3b5c', fontWeight: 700, fontSize: 'var(--size-sm)' }}>
+                            <div style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: 'var(--r-md)', textAlign: 'center', flexShrink: 0 }}>
+                                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 2, letterSpacing: '0.06em' }}>Last Event</div>
+                                <div style={{ color: lastResult === 'resident' ? '#00e5a0' : '#ff3b5c', fontWeight: 700, fontSize: 'var(--size-xs)' }}>
                                     {lastResult === 'resident' ? (lastResidentName || 'Resident') : 'Unknown Person'}
                                 </div>
                             </div>
@@ -205,48 +269,70 @@ const DashboardPage = () => {
                     </div>
                 </div>
 
-                <div className="card" style={{ display: 'flex', flexDirection: 'column', background: securityStatus === 'secure' ? 'var(--bg-surface)' : 'rgba(255,59,92,0.05)', borderColor: securityStatus === 'secure' ? 'var(--border-soft)' : 'rgba(255,59,92,0.2)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s4)' }}>
-                        {securityStatus === 'secure' ? <ShieldCheck style={{ color: 'var(--jade-core)' }} /> : <ShieldAlert style={{ color: '#ff3b5c' }} />}
-                        <h3 style={{ fontSize: 'var(--size-base)', fontWeight: 600 }}>Security</h3>
+                <div className="card dash-stat-card" style={{
+                    ...STAT_CARD,
+                    background: securityStatus === 'secure' ? 'var(--bg-surface)' : 'rgba(255,59,92,0.05)',
+                    borderColor: securityStatus === 'secure' ? 'var(--border-soft)' : 'rgba(255,59,92,0.2)',
+                }}>
+                    <div style={STAT_HEAD}>
+                        {securityStatus === 'secure'
+                            ? <ShieldCheck size={18} style={{ color: 'var(--jade-core)' }} />
+                            : <ShieldAlert size={18} style={{ color: '#ff3b5c' }} />}
+                        <h3 style={STAT_TITLE}>Security</h3>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s3)', marginTop: 'auto' }}>
-                        <div style={{ background: 'var(--bg-base)', padding: 'var(--s3)', borderRadius: 'var(--r-md)' }}>
-                            <div style={{ color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Motion</div>
-                            <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: activeMotions > 0 ? '#9b59ff' : 'var(--text-primary)' }}>{activeMotions} <span style={{ fontSize: 12, fontWeight: 400 }}>zones</span></div>
+                    <div style={STAT_GRID}>
+                        <div style={STAT_TILE(false)}>
+                            <div style={STAT_LABEL}>Motion</div>
+                            <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: activeMotions > 0 ? '#9b59ff' : 'var(--text-primary)' }}>{activeMotions}<span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4 }}>zones</span></div>
                         </div>
-                        <div style={{ background: 'var(--bg-base)', padding: 'var(--s3)', borderRadius: 'var(--r-md)' }}>
-                            <div style={{ color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Alerts</div>
+                        <div style={STAT_TILE(false)}>
+                            <div style={STAT_LABEL}>Alerts</div>
                             <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: alerts.length > 0 ? '#ffb020' : 'var(--text-primary)' }}>{alerts.length}</div>
                         </div>
                     </div>
                 </div>
 
-                <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s4)' }}>
-                        <Thermometer style={{ color: '#ff6b35' }} />
-                        <h3 style={{ fontSize: 'var(--size-base)', fontWeight: 600 }}>Home Climate</h3>
+                <div className="card dash-stat-card" style={STAT_CARD}>
+                    <div style={STAT_HEAD}>
+                        <Thermometer size={18} style={{ color: '#ff6b35' }} />
+                        <h3 style={STAT_TITLE}>Climate</h3>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s3)', marginTop: 'auto' }}>
-                        <div style={{ background: 'var(--bg-base)', padding: 'var(--s3)', borderRadius: 'var(--r-md)' }}>
-                            <div style={{ color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Avg Temp</div>
-                            <div style={{ fontWeight: 700, fontSize: 'var(--size-xl)', color: '#ff6b35' }}>{avgTemp.toFixed(1)}°</div>
+                    <div style={STAT_GRID}>
+                        <div style={STAT_TILE(false)}>
+                            <div style={STAT_LABEL}>Avg Temp</div>
+                            <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: '#ff6b35' }}>{tempSensors.length > 0 ? `${avgTemp.toFixed(1)}°` : '\u2014'}</div>
                         </div>
-                        <div style={{ background: 'var(--bg-base)', padding: 'var(--s3)', borderRadius: 'var(--r-md)' }}>
-                            <div style={{ color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Avg Hum</div>
-                            <div style={{ fontWeight: 700, fontSize: 'var(--size-xl)', color: '#00d4ff' }}>{avgHum.toFixed(0)}%</div>
+                        <div style={STAT_TILE(false)}>
+                            <div style={STAT_LABEL}>Avg Hum</div>
+                            <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: '#00d4ff' }}>{humSensors.length > 0 ? `${avgHum.toFixed(0)}%` : '\u2014'}</div>
                         </div>
                     </div>
                 </div>
+
+                <HazardCard
+                    icon={Flame}
+                    label="Smoke"
+                    sensors={smokeSensors}
+                    accent="#ff3b5c"
+                    alertText="ALERT"
+                />
+
+                <HazardCard
+                    icon={Waves}
+                    label="Water"
+                    sensors={waterSensors}
+                    accent="#3b9eff"
+                    alertText="LEAK"
+                />
             </div>
 
             {alerts.length > 0 && (
-                <div>
-                    <h3 style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 'var(--s3)' }}>Recent Alerts</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s2)' }}>
+                    <h3 style={{ fontSize: 'var(--size-xs)', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recent Alerts</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s2)' }}>
                         {alerts.map(a => (
                             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--s3)', padding: 'var(--s3)', background: a.priority === 'critical' ? 'rgba(255,59,92,0.1)' : 'rgba(255,176,32,0.1)', borderRadius: 'var(--r-md)', border: `1px solid ${a.priority === 'critical' ? 'rgba(255,59,92,0.2)' : 'rgba(255,176,32,0.2)'}` }}>
-                                <AlertTriangle size={16} style={{ color: a.priority === 'critical' ? '#ff3b5c' : '#ffb020' }} />
+                                <AlertTriangle size={16} style={{ color: a.priority === 'critical' ? '#ff3b5c' : '#ffb020', flexShrink: 0 }} />
                                 <div style={{ flex: 1, fontSize: 'var(--size-sm)' }}>
                                     <strong style={{ color: a.priority === 'critical' ? '#ff3b5c' : '#ffb020', marginRight: 8, textTransform: 'capitalize' }}>{a.event_type}</strong>
                                     {a.message}
@@ -257,10 +343,10 @@ const DashboardPage = () => {
                 </div>
             )}
 
-            <div style={{ marginTop: 'var(--s4)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s4)' }}>
-                    <h2 style={{ fontSize: 'var(--size-lg)', fontWeight: 600 }}>Environmental Sensors</h2>
-                    <div style={{ display: 'flex', gap: 'var(--s2)', overflowX: 'auto', scrollbarWidth: 'none' }}>
+            <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s3)', gap: 'var(--s4)' }}>
+                    <h2 style={{ fontSize: 'var(--size-md)', fontWeight: 600 }}>Environmental Sensors</h2>
+                    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}>
                         {ROOM_TABS.map(tab => {
                             const active = activeTab === tab.id;
                             return (
@@ -272,11 +358,47 @@ const DashboardPage = () => {
                         })}
                     </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--s3)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 'var(--s3)' }}>
                     {filtered.map(sensor => <MiniSensorCard key={sensor.id} sensor={sensor} />)}
-                    {filtered.length === 0 && <div style={{ gridColumn: '1/-1', padding: 'var(--s8)', textAlign: 'center', color: 'var(--text-muted)' }}>No sensors match this filter.</div>}
+                    {filtered.length === 0 && <div style={{ gridColumn: '1/-1', padding: 'var(--s6)', textAlign: 'center', color: 'var(--text-muted)' }}>No sensors match this filter.</div>}
                 </div>
             </div>
+
+            <style>{`
+                .dash-overview-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    grid-auto-rows: minmax(140px, auto);
+                    gap: var(--s4);
+                }
+                .dash-camera-card {
+                    grid-column: span 2;
+                    grid-row: span 2;
+                    min-height: 0;
+                }
+                .dash-stat-card {
+                    min-height: 0;
+                }
+                @media (max-width: 1100px) {
+                    .dash-overview-grid {
+                        grid-template-columns: repeat(2, 1fr);
+                    }
+                    .dash-camera-card {
+                        grid-column: span 2;
+                        grid-row: span 1;
+                        aspect-ratio: 21 / 9;
+                    }
+                }
+                @media (max-width: 640px) {
+                    .dash-overview-grid {
+                        grid-template-columns: 1fr;
+                    }
+                    .dash-camera-card {
+                        grid-column: auto;
+                        aspect-ratio: 16 / 10;
+                    }
+                }
+            `}</style>
         </div>
     );
 };

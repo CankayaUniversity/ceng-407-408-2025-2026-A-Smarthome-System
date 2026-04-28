@@ -17,3 +17,5 @@ face-recognition/data/captures/
 
 # Build output
 website/client/dist/
+
+poster/
