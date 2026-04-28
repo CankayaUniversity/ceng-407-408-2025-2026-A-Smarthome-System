@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 import '../services/supabase_realtime_service.dart';
+import 'supabase_data_provider.dart';
 
 class NotificationProvider extends ChangeNotifier {
   final List<Map<String, dynamic>> _faceAlerts = [];
@@ -10,6 +11,10 @@ class NotificationProvider extends ChangeNotifier {
 
   final SupabaseRealtimeService _realtimeService = SupabaseRealtimeService();
 
+  /// Reference to the data provider so realtime payloads can be forwarded.
+  /// Set via [attachDataProvider] from the ProxyProvider in `main.dart`.
+  SupabaseDataProvider? _data;
+
   List<Map<String, dynamic>> get faceAlerts => List.unmodifiable(_faceAlerts);
   bool get pendingPopup => _pendingPopup;
   Map<String, dynamic>? get latestCameraEvent => _latestCameraEvent;
@@ -17,11 +22,19 @@ class NotificationProvider extends ChangeNotifier {
 
   StreamSubscription? _cameraSub;
   StreamSubscription? _eventSub;
+  StreamSubscription? _sensorSub;
   StreamSubscription? _connectionSub;
   bool _wasAuthenticated = false;
   bool _realtimeConnected = false;
 
   bool get realtimeConnected => _realtimeConnected;
+
+  /// Wire-in the SupabaseDataProvider so realtime callbacks can mutate
+  /// shared state (latestCameraEvent / sensor readings) without forcing
+  /// a refetch — web parity with `RealtimeContext` that mutates React state.
+  void attachDataProvider(SupabaseDataProvider data) {
+    _data = data;
+  }
 
   /// Called by ProxyProvider whenever AuthProvider changes.
   void updateAuth({bool isAuthenticated = false}) {
@@ -31,6 +44,7 @@ class NotificationProvider extends ChangeNotifier {
     } else if (!isAuthenticated && _wasAuthenticated) {
       _cameraSub?.cancel();
       _eventSub?.cancel();
+      _sensorSub?.cancel();
       _connectionSub?.cancel();
       _realtimeService.unsubscribe();
       _realtimeConnected = false;
@@ -42,6 +56,7 @@ class NotificationProvider extends ChangeNotifier {
   void _listenToStreams() {
     _cameraSub?.cancel();
     _eventSub?.cancel();
+    _sensorSub?.cancel();
     _connectionSub?.cancel();
 
     _connectionSub = _realtimeService.connectionStatus.listen((connected) {
@@ -51,6 +66,10 @@ class NotificationProvider extends ChangeNotifier {
 
     _cameraSub = _realtimeService.cameraEvents.listen((row) {
       _latestCameraEvent = row;
+
+      // Forward to SupabaseDataProvider so the dashboard "last snapshot"
+      // banner and the camera screen list update without a refetch.
+      _data?.prependCameraEvent(Map<String, dynamic>.from(row));
 
       final alert = <String, dynamic>{
         'id': row['id']?.toString() ??
@@ -74,8 +93,12 @@ class NotificationProvider extends ChangeNotifier {
     });
 
     _eventSub = _realtimeService.events.listen((row) {
-      // Skip already-acknowledged events (e.g. UPDATE from acknowledge button)
-      if (row['acknowledged'] == true) return;
+      // Forward INSERTs into the events list so AlertsScreen updates live.
+      if (row['acknowledged'] != true) {
+        _data?.prependEvent(Map<String, dynamic>.from(row));
+      } else {
+        return;
+      }
 
       final eventType =
           (row['event_type'] ?? row['type'] ?? '').toString().toLowerCase();
@@ -114,6 +137,13 @@ class NotificationProvider extends ChangeNotifier {
         body: entry['message'] as String,
       );
     });
+
+    // Forward sensor reading inserts so the home dashboard, rooms screen
+    // and history pages update without a re-fetch — web RealtimeContext
+    // parity (`subscribe('sensor_reading', ...)`).
+    _sensorSub = _realtimeService.sensorReadings.listen((row) {
+      _data?.updateSensorFromRealtime(Map<String, dynamic>.from(row));
+    });
   }
 
   void _addFaceAlert(Map<String, dynamic> alert) {
@@ -139,6 +169,7 @@ class NotificationProvider extends ChangeNotifier {
   void dispose() {
     _cameraSub?.cancel();
     _eventSub?.cancel();
+    _sensorSub?.cancel();
     _connectionSub?.cancel();
     _realtimeService.dispose();
     super.dispose();

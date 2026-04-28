@@ -12,9 +12,18 @@ class SupabaseConfig {
   static const String eventFacesTable = 'event_faces';
   static const String residentsTable = 'residents';
   static const String profilesTable = 'profiles';
+  static const String devicesTable = 'devices';
 
   // Storage
   static const String snapshotBucket = 'event-snapshots';
+
+  // Live camera stream — pass via `--dart-define=CAMERA_STREAM_URL=...`
+  // and optional `--dart-define=CAMERA_STREAM_TYPE=mjpeg|hls`. Empty URL
+  // disables the Live tab and shows an empty-state hint.
+  static const String cameraStreamUrl =
+      String.fromEnvironment('CAMERA_STREAM_URL', defaultValue: '');
+  static const String cameraStreamType =
+      String.fromEnvironment('CAMERA_STREAM_TYPE', defaultValue: 'mjpeg');
 
   /// Returns a public URL for a file in Supabase Storage.
   static String getPublicUrl(String bucket, String path) {

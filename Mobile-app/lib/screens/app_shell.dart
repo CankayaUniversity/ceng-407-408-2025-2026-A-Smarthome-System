@@ -8,6 +8,7 @@ import '../alerts_screen.dart';
 import '../settings_screen.dart';
 import '../providers/notification_provider.dart';
 import '../security_alert_screen.dart';
+import '../theme/app_theme.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -64,6 +65,8 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     final List<Widget> screens = const [
       HomeScreen(),
       RoomsScreen(),
@@ -80,10 +83,11 @@ class _AppShellState extends State<AppShell> {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tokens.bgSurface,
+          border: Border(top: BorderSide(color: tokens.borderSoft)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, -4),
             ),
@@ -110,7 +114,11 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _buildNavItem(IconData icon, String label, int index) {
+    final tokens = context.tokens;
     final isSelected = _currentIndex == index;
+    final activeColor = tokens.emberCore;
+    final inactiveColor = tokens.textMuted;
+
     return GestureDetector(
       onTap: () => setState(() => _currentIndex = index),
       behavior: HitTestBehavior.opaque,
@@ -118,7 +126,7 @@ class _AppShellState extends State<AppShell> {
         duration: const Duration(milliseconds: 250),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF5C61B2).withOpacity(0.12) : Colors.transparent,
+          color: isSelected ? tokens.emberGlow : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -127,15 +135,16 @@ class _AppShellState extends State<AppShell> {
             Icon(
               icon,
               size: 22,
-              color: isSelected ? const Color(0xFF5C61B2) : Colors.grey.shade400,
+              color: isSelected ? activeColor : inactiveColor,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? const Color(0xFF5C61B2) : Colors.grey.shade400,
+                fontWeight:
+                    isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? activeColor : inactiveColor,
               ),
             ),
           ],
