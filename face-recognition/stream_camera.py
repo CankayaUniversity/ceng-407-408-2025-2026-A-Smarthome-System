@@ -3,9 +3,12 @@
 ─────────────────────────────────────────────────────────────────
  SmartHome — Raspberry Pi Camera Streamer
 ─────────────────────────────────────────────────────────────────
- Captures frames from the default camera via OpenCV, compresses
- them as JPEG, encodes to base64, and sends them over a WebSocket
- to the cloud relay server.
+ Captures frames from the camera, compresses them as JPEG, encodes
+ to base64, and sends them over a WebSocket to the cloud relay.
+
+ Capture backends (in priority order):
+   1. Picamera2 — for Raspberry Pi CSI cameras (OV5647, IMX219, …)
+   2. OpenCV VideoCapture — fallback for USB cameras / other platforms
 
  Features:
    • Configurable resolution, FPS, and JPEG quality
@@ -33,6 +36,7 @@ import sys
 import time
 
 import cv2
+import numpy as np
 
 try:
     import websocket  # websocket-client library
@@ -40,6 +44,14 @@ except ImportError:
     print("[Streamer] ERROR: 'websocket-client' package not found.")
     print("           Install it with:  pip install websocket-client")
     sys.exit(1)
+
+# ── Optional Picamera2 import (preferred for CSI cameras) ─────
+
+try:
+    from picamera2 import Picamera2
+    _PICAMERA2_AVAILABLE = True
+except ImportError:
+    _PICAMERA2_AVAILABLE = False
 
 # ── Logging setup ────────────────────────────────────────────────
 
@@ -118,23 +130,83 @@ def parse_args():
     )
     return parser.parse_args()
 
-# ── Camera helper ─────────────────────────────────────────────────
+# ── Camera backends ───────────────────────────────────────────────
+
+
+class Picamera2Backend:
+    """CSI camera capture via Picamera2 (Raspberry Pi)."""
+
+    def __init__(self, width: int, height: int):
+        self._picam = Picamera2()
+        config = self._picam.create_preview_configuration(
+            main={"size": (width, height), "format": "RGB888"}
+        )
+        self._picam.configure(config)
+        self._picam.start()
+        # Allow auto-exposure to settle
+        time.sleep(0.5)
+        actual = self._picam.camera_configuration()["main"]["size"]
+        log.info("Picamera2 started — resolution: %dx%d", actual[0], actual[1])
+
+    def read(self):
+        """Return (success, bgr_frame)."""
+        try:
+            rgb_frame = self._picam.capture_array()
+            # Picamera2 returns RGB; OpenCV imencode expects BGR
+            bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+            return True, bgr_frame
+        except Exception as exc:
+            log.warning("Picamera2 capture failed: %s", exc)
+            return False, None
+
+    def release(self):
+        try:
+            self._picam.stop()
+            self._picam.close()
+        except Exception:
+            pass
+
+
+class OpenCVBackend:
+    """USB/generic camera capture via OpenCV VideoCapture (fallback)."""
+
+    def __init__(self, index: int, width: int, height: int):
+        log.info("Opening OpenCV camera device %d  (%dx%d)", index, width, height)
+        self._cap = cv2.VideoCapture(index)
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Failed to open camera device {index}")
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        log.info("OpenCV camera opened — resolution: %dx%d", actual_w, actual_h)
+
+    def read(self):
+        """Return (success, bgr_frame)."""
+        return self._cap.read()
+
+    def release(self):
+        try:
+            self._cap.release()
+        except Exception:
+            pass
 
 
 def open_camera(index: int, width: int, height: int):
-    """Open the camera and configure resolution."""
-    log.info("Opening camera device %d  (%dx%d)", index, width, height)
-    cap = cv2.VideoCapture(index)
-    if not cap.isOpened():
-        log.error("Failed to open camera device %d", index)
+    """Open the best available camera backend: Picamera2 first, then OpenCV."""
+    if _PICAMERA2_AVAILABLE:
+        try:
+            log.info("Attempting Picamera2 backend (CSI camera)…")
+            return Picamera2Backend(width, height)
+        except Exception as exc:
+            log.warning("Picamera2 init failed (%s) — falling back to OpenCV", exc)
+
+    try:
+        return OpenCVBackend(index, width, height)
+    except RuntimeError as exc:
+        log.error("%s", exc)
         return None
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # minimize latency
-    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    log.info("Camera opened — actual resolution: %dx%d", actual_w, actual_h)
-    return cap
 
 # ── Main streaming loop ──────────────────────────────────────────
 
@@ -145,7 +217,7 @@ def stream(args):
 
     while not _shutdown_requested:
         ws = None
-        cap = None
+        cam = None
         try:
             # ── Connect to relay ──
             log.info("Connecting to relay at %s …", args.url)
@@ -164,8 +236,8 @@ def stream(args):
             reconnect_delay = 1
 
             # ── Open camera ──
-            cap = open_camera(args.camera, args.width, args.height)
-            if cap is None:
+            cam = open_camera(args.camera, args.width, args.height)
+            if cam is None:
                 raise RuntimeError("Camera unavailable")
 
             frame_interval = 1.0 / args.fps
@@ -178,7 +250,7 @@ def stream(args):
             while not _shutdown_requested:
                 loop_start = time.time()
 
-                ret, frame = cap.read()
+                ret, frame = cam.read()
                 if not ret:
                     log.warning("Camera read failed — retrying in 1 s")
                     time.sleep(1)
@@ -226,8 +298,8 @@ def stream(args):
             log.exception("Unexpected error: %s", exc)
 
         finally:
-            if cap is not None:
-                cap.release()
+            if cam is not None:
+                cam.release()
                 log.info("Camera released")
             if ws is not None:
                 try:
