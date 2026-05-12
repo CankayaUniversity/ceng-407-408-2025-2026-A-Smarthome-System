@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Database, Key, Save, CheckCircle, Palette } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Database, Key, Save, CheckCircle, Palette, Users, Trash2, ShieldAlert } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../context/ThemeContext';
@@ -35,10 +35,23 @@ function FieldRow({ label, desc, children }) {
 }
 
 const SettingsPage = () => {
-    const { profile, user } = useAuth();
+    const { profile, user, isAdmin, deleteAuthUser } = useAuth();
     const { theme } = useTheme();
     const [saved, setSaved] = useState(false);
     const [nameVal, setNameVal] = useState(profile?.name || '');
+
+    // Admin: all users list
+    const [allProfiles, setAllProfiles] = useState([]);
+    const [loadingProfiles, setLoadingProfiles] = useState(false);
+    const [deleteError, setDeleteError] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+        setLoadingProfiles(true);
+        supabase.from('profiles').select('*').order('created_at', { ascending: true })
+            .then(({ data }) => { setAllProfiles(data || []); setLoadingProfiles(false); });
+    }, [isAdmin]);
 
     const streamUrl = import.meta.env.VITE_CAMERA_STREAM_URL || '';
 
@@ -102,6 +115,62 @@ const SettingsPage = () => {
                         <ThemeSwitch size="lg" showLabel />
                     </FieldRow>
                 </Section>
+
+                {/* Admin-only: User Management */}
+                {isAdmin && (
+                    <Section icon={ShieldAlert} title="User Management" desc="Admin only — manage all system accounts">
+                        {deleteError && (
+                            <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{deleteError}</div>
+                        )}
+                        {loadingProfiles ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s3)', padding: 'var(--s4)', color: 'var(--text-muted)' }}>
+                                <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Loading accounts...
+                            </div>
+                        ) : allProfiles.length === 0 ? (
+                            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--size-sm)', padding: 'var(--s4)' }}>No profiles found.</div>
+                        ) : (
+                            allProfiles.map(p => (
+                                <FieldRow
+                                    key={p.id}
+                                    label={p.name || p.email || 'Unknown'}
+                                    desc={`${p.email || '—'} · ${p.role || 'resident'}`}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s3)' }}>
+                                        <span className={`badge ${p.role === 'admin' ? 'badge-warning' : 'badge-neutral'}`} style={{ textTransform: 'uppercase' }}>
+                                            {p.role || 'resident'}
+                                        </span>
+                                        {p.id !== user?.id && (
+                                            <button
+                                                className="btn btn-danger btn-sm"
+                                                disabled={deletingId === p.id}
+                                                onClick={async () => {
+                                                    if (!confirm(`Delete account for "${p.name || p.email}"? This cannot be undone.`)) return;
+                                                    setDeletingId(p.id);
+                                                    setDeleteError(null);
+                                                    const result = await deleteAuthUser(p.id);
+                                                    if (result.success) {
+                                                        setAllProfiles(prev => prev.filter(x => x.id !== p.id));
+                                                    } else {
+                                                        setDeleteError(result.error || 'Delete failed');
+                                                    }
+                                                    setDeletingId(null);
+                                                }}
+                                                title="Delete this user account"
+                                            >
+                                                {deletingId === p.id
+                                                    ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                                                    : <Trash2 size={13} />}
+                                            </button>
+                                        )}
+                                        {p.id === user?.id && (
+                                            <span style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>You</span>
+                                        )}
+                                    </div>
+                                </FieldRow>
+                            ))
+                        )}
+                    </Section>
+                )}
 
                 <Section icon={Database} title="System Information" desc="Live infrastructure status">
                     {[

@@ -11,19 +11,16 @@ const FEATURE_PILLS = [
 ];
 
 const LoginPage = () => {
-    const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
 
-    const { login, register, error, loading, isAuthenticated } = useAuth();
+    const { login, error, loading, isAuthenticated } = useAuth();
 
     if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (isLogin) await login(email, password);
-        else await register(name, email, password);
+        await login(email, password);
     };
 
     return (
@@ -68,26 +65,14 @@ const LoginPage = () => {
             <div className="auth-panel">
                 <div className="auth-form-wrap">
                     <div className="auth-eyebrow">Welcome back</div>
-                    <h1 className="auth-title">
-                        {isLogin ? 'Sign into your\nspace.' : 'Create your\naccount.'}
-                    </h1>
+                    <h1 className="auth-title">Sign into your<br />space.</h1>
                     <p className="auth-subtitle">
-                        {isLogin
-                            ? 'Enter your credentials to access the intelligence dashboard.'
-                            : 'Join your smart home network.'}
+                        Enter your credentials to access the intelligence dashboard.
                     </p>
 
                     {error && <div className="auth-error">{error}</div>}
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
-                        {!isLogin && (
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label">Full Name</label>
-                                <input type="text" className="form-input" placeholder="John Doe"
-                                    value={name} onChange={(e) => setName(e.target.value)}
-                                    required={!isLogin} disabled={loading} />
-                            </div>
-                        )}
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label">Email address</label>
                             <input type="email" className="form-input" placeholder="you@example.com"
@@ -104,18 +89,12 @@ const LoginPage = () => {
                             style={{ justifyContent: 'center', height: 52, fontSize: 'var(--size-md)', marginTop: 'var(--s2)', borderRadius: 'var(--r-lg)' }}>
                             {loading
                                 ? <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                                : <>{isLogin ? 'Sign In' : 'Create Account'}<ArrowRight size={18} /></>}
+                                : <>Sign In <ArrowRight size={18} /></>}
                         </button>
                     </form>
 
-                    <div style={{ marginTop: 'var(--s6)', textAlign: 'center', fontSize: 'var(--size-sm)' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>
-                            {isLogin ? "Don't have an account? " : "Already have an account? "}
-                        </span>
-                        <button type="button" onClick={() => setIsLogin(!isLogin)}
-                            style={{ background: 'none', border: 'none', color: 'var(--ember-core)', cursor: 'pointer', fontWeight: 600, fontFamily: 'var(--font-body)', fontSize: 'var(--size-sm)' }}>
-                            {isLogin ? 'Sign up' : 'Log in'}
-                        </button>
+                    <div style={{ marginTop: 'var(--s6)', textAlign: 'center', fontSize: 'var(--size-sm)', color: 'var(--text-muted)' }}>
+                        Don&apos;t have an account? Contact your system administrator.
                     </div>
                 </div>
             </div>
