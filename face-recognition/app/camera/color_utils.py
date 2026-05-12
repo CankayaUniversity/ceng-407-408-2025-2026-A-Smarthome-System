@@ -17,7 +17,7 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
-CAMERA_COLOR_MODE = os.environ.get("CAMERA_COLOR_MODE", "rgb_to_bgr").lower().strip()
+CAMERA_COLOR_MODE = os.environ.get("CAMERA_COLOR_MODE", "no_convert").lower().strip()
 
 # Log once at import time so it's obvious which mode is active
 logger.info("CAMERA_COLOR_MODE = %s", CAMERA_COLOR_MODE)

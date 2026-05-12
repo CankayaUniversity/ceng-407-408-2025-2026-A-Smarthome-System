@@ -71,7 +71,7 @@ DEFAULT_FPS = 20
 DEFAULT_JPEG_QUALITY = 60  # 0-100  lower = smaller payload
 MAX_RECONNECT_DELAY = 30   # seconds
 STREAM_ON_DEMAND = os.getenv("STREAM_ON_DEMAND", "true").lower() in ("1", "true", "yes")
-CAMERA_COLOR_MODE = os.getenv("CAMERA_COLOR_MODE", "rgb_to_bgr").lower().strip()
+CAMERA_COLOR_MODE = os.getenv("CAMERA_COLOR_MODE", "no_convert").lower().strip()
 
 
 def normalize_frame(frame):

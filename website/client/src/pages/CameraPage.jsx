@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, Shield, ShieldOff, CheckCircle, XCircle, User, Loader } from 'lucide-react';
+import { Camera, Radio, Shield, ShieldOff, CheckCircle, XCircle, User, Loader } from 'lucide-react';
 import { useRealtime } from '../context/RealtimeContext';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { formatDistanceToNow } from 'date-fns';
@@ -12,6 +12,7 @@ const CameraPage = () => {
     const { subscribe } = useRealtime();
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [feedMode, setFeedMode] = useState('snapshot');
 
     const [hoverState, setHoverState] = useState(null); // { event, rect, url }
     const hoverTimerRef = useRef(null);
@@ -60,6 +61,9 @@ const CameraPage = () => {
         if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     }, []);
 
+    const latestSnapshotUrl = events[0]?.snapshot_path
+        ? getPublicUrl('event-snapshots', events[0].snapshot_path) : null;
+
 
     const handleRowEnter = (e, ev) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -96,11 +100,26 @@ const CameraPage = () => {
                 <div className="card" style={{ padding: 0, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--s3) var(--s5)', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-raised)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s2)', fontSize: 'var(--size-xs)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                            <Camera size={14} /> Live Camera
+                            <Camera size={14} /> {feedMode === 'live' ? 'Live Camera' : 'Latest Snapshot'}
                         </div>
+                        <FeedModeSwitch value={feedMode} onChange={setFeedMode} />
                     </div>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', background: 'var(--bg-base)', overflow: 'hidden' }}>
-                        <LiveCameraFeed />
+                        {feedMode === 'live' ? (
+                            <LiveCameraFeed />
+                        ) : latestSnapshotUrl ? (
+                            <img
+                                src={latestSnapshotUrl}
+                                alt="Latest capture"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                        ) : (
+                            <FeedEmptyState
+                                icon={<Camera size={28} />}
+                                title="No Snapshots Yet"
+                                desc="Snapshots will appear when motion is detected."
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -176,5 +195,74 @@ const CameraPage = () => {
         </div>
     );
 };
+
+const FeedModeSwitch = ({ value, onChange }) => {
+    const isLive = value === 'live';
+    return (
+        <div
+            role="tablist"
+            aria-label="Feed source"
+            style={{
+                display: 'inline-flex',
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border-soft)',
+                borderRadius: 'var(--r-full)',
+                overflow: 'hidden',
+            }}
+        >
+            <FeedModeButton active={isLive} onClick={() => onChange('live')} icon={<Radio size={11} />} label="Live" />
+            <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-soft)' }} aria-hidden />
+            <FeedModeButton active={!isLive} onClick={() => onChange('snapshot')} icon={<Camera size={11} />} label="Snapshot" />
+        </div>
+    );
+};
+
+const FeedModeButton = ({ active, onClick, icon, label }) => (
+    <button
+        type="button"
+        role="tab"
+        aria-selected={active}
+        onClick={onClick}
+        style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 14px',
+            border: 'none',
+            background: active ? 'var(--ember-core)' : 'transparent',
+            color: active ? 'white' : 'var(--text-muted)',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            transition: 'background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out)',
+        }}
+    >
+        {icon}
+        {label}
+    </button>
+);
+
+const FeedEmptyState = ({ icon, title, desc }) => (
+    <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        textAlign: 'center', padding: 'var(--s6)', gap: 'var(--s3)',
+    }}>
+        <div style={{
+            width: 64, height: 64,
+            background: 'rgba(255,59,92,0.08)',
+            border: '1px solid rgba(255,59,92,0.2)',
+            borderRadius: 'var(--r-xl)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--crimson-core)',
+        }}>
+            {icon}
+        </div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-lg)', fontWeight: 700, color: 'var(--text-secondary)' }}>{title}</div>
+        <div style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', maxWidth: 320 }}>{desc}</div>
+    </div>
+);
 
 export default CameraPage;
