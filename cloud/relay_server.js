@@ -14,6 +14,10 @@
  *  • After registration the streamer sends raw base64 strings;
  *    the server relays them verbatim to all viewers.
  *
+ *  • On-demand control (streamer ← relay):
+ *        { "type": "control", "action": "start" }  – first viewer connected
+ *        { "type": "control", "action": "stop" }   – last viewer disconnected
+ *
  *  Run:  node relay_server.js
  *  Port: 8080 (configurable via PORT env var)
  * ─────────────────────────────────────────────────────────────────
@@ -31,6 +35,15 @@ const wss = new WebSocketServer({ port: PORT }, () => {
 
 const viewers = new Set();
 let streamer = null;
+
+// ── On-demand control: notify streamer of viewer presence ────────
+
+function notifyStreamer(action) {
+  if (streamer && streamer.readyState === streamer.OPEN) {
+    streamer.send(JSON.stringify({ type: 'control', action }));
+    console.log(`[Relay] Sent control:${action} to streamer  (viewers: ${viewers.size})`);
+  }
+}
 
 // ── Heartbeat (detect dead sockets) ─────────────────────────────
 
@@ -82,6 +95,7 @@ wss.on('connection', (ws, req) => {
           ws.role = 'viewer';
           viewers.add(ws);
           console.log(`[Relay] Viewer registered     (${ip})  — viewers: ${viewers.size}`);
+          if (viewers.size === 1) notifyStreamer('start');
           return;
         }
         // Unknown role — treat as viewer by default
@@ -121,9 +135,10 @@ wss.on('connection', (ws, req) => {
     if (ws.role === 'streamer') {
       console.log(`[Relay] Streamer disconnected  (code ${code})`);
       if (streamer === ws) streamer = null;
-    } else {
+    } else if (ws.role === 'viewer') {
       viewers.delete(ws);
       console.log(`[Relay] Viewer disconnected    — viewers: ${viewers.size}`);
+      if (viewers.size === 0) notifyStreamer('stop');
     }
   });
 

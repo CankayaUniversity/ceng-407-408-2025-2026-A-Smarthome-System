@@ -64,6 +64,7 @@ RELAY_URL = os.environ.get("RELAY_URL", "ws://92.5.17.205:8080")
 RELAY_FPS = int(os.environ.get("RELAY_FPS", "15"))
 RELAY_JPEG_QUALITY = int(os.environ.get("RELAY_JPEG_QUALITY", "60"))
 RELAY_ENABLED = os.environ.get("RELAY_ENABLED", "true").lower() in ("1", "true", "yes")
+STREAM_ON_DEMAND = os.environ.get("STREAM_ON_DEMAND", "true").lower() in ("1", "true", "yes")
 MAX_RELAY_RECONNECT_DELAY = 30
 
 # ── Hardware init ──────────────────────────────────────────────
@@ -193,6 +194,27 @@ def heartbeat_loop():
 
 # ── Live relay streamer thread ────────────────────────────────
 
+def _relay_check_control(ws):
+    """Non-blocking check for a control message from the relay."""
+    try:
+        ws.settimeout(0)
+        data = ws.recv()
+        ws.settimeout(10)
+        msg = json.loads(data)
+        if msg.get("type") == "control":
+            return msg.get("action")
+    except (BlockingIOError, json.JSONDecodeError):
+        pass
+    except Exception:
+        pass
+    finally:
+        try:
+            ws.settimeout(10)
+        except Exception:
+            pass
+    return None
+
+
 def relay_streamer_thread(camera):
     """Background thread: stream live frames to the WebSocket relay."""
     if websocket is None:
@@ -209,10 +231,28 @@ def relay_streamer_thread(camera):
             logger.info("[Relay] Connecting to %s …", RELAY_URL)
             ws = websocket.create_connection(RELAY_URL, timeout=10)
             ws.send(json.dumps({"role": "streamer"}))
-            logger.info("[Relay] Registered as streamer — streaming at %d FPS", RELAY_FPS)
+            logger.info("[Relay] Registered as streamer — %s mode",
+                        "on-demand" if STREAM_ON_DEMAND else "always-on")
             reconnect_delay = 1
 
+            streaming_active = not STREAM_ON_DEMAND
+            if STREAM_ON_DEMAND:
+                logger.info("[Relay] Waiting for viewer (control:start)...")
+
             while True:
+                # Check for control messages
+                action = _relay_check_control(ws)
+                if action == "start" and not streaming_active:
+                    streaming_active = True
+                    logger.info("[Relay] Viewer connected — streaming started")
+                elif action == "stop" and streaming_active:
+                    streaming_active = False
+                    logger.info("[Relay] No viewers — streaming paused")
+
+                if not streaming_active:
+                    time.sleep(0.25)
+                    continue
+
                 loop_start = time.time()
                 frame = camera.grab_relay_frame()
                 if frame is None:

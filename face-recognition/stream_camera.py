@@ -70,6 +70,7 @@ DEFAULT_HEIGHT = 480
 DEFAULT_FPS = 20
 DEFAULT_JPEG_QUALITY = 60  # 0-100  lower = smaller payload
 MAX_RECONNECT_DELAY = 30   # seconds
+STREAM_ON_DEMAND = os.getenv("STREAM_ON_DEMAND", "true").lower() in ("1", "true", "yes")
 
 # ── Graceful shutdown flag ────────────────────────────────────────
 
@@ -139,21 +140,19 @@ class Picamera2Backend:
     def __init__(self, width: int, height: int):
         self._picam = Picamera2()
         config = self._picam.create_preview_configuration(
-            main={"size": (width, height), "format": "RGB888"}
+            main={"size": (width, height), "format": "BGR888"}
         )
         self._picam.configure(config)
         self._picam.start()
         # Allow auto-exposure to settle
         time.sleep(0.5)
         actual = self._picam.camera_configuration()["main"]["size"]
-        log.info("Picamera2 started — resolution: %dx%d", actual[0], actual[1])
+        log.info("Picamera2 started (BGR888) — resolution: %dx%d", actual[0], actual[1])
 
     def read(self):
         """Return (success, bgr_frame)."""
         try:
-            rgb_frame = self._picam.capture_array()
-            # Picamera2 returns RGB; OpenCV imencode expects BGR
-            bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+            bgr_frame = self._picam.capture_array()
             return True, bgr_frame
         except Exception as exc:
             log.warning("Picamera2 capture failed: %s", exc)
@@ -211,9 +210,31 @@ def open_camera(index: int, width: int, height: int):
 # ── Main streaming loop ──────────────────────────────────────────
 
 
+def _check_control(ws):
+    """Non-blocking check for a control message from the relay."""
+    try:
+        ws.settimeout(0)
+        data = ws.recv()
+        ws.settimeout(10)
+        msg = json.loads(data)
+        if msg.get("type") == "control":
+            return msg.get("action")
+    except (websocket.WebSocketException, BlockingIOError, json.JSONDecodeError):
+        pass
+    except Exception:
+        pass
+    finally:
+        try:
+            ws.settimeout(10)
+        except Exception:
+            pass
+    return None
+
+
 def stream(args):
     """Connect to relay and continuously send base64-encoded JPEG frames."""
     reconnect_delay = 1  # seconds — grows exponentially on failure
+    on_demand = STREAM_ON_DEMAND
 
     while not _shutdown_requested:
         ws = None
@@ -245,9 +266,29 @@ def stream(args):
             frame_count = 0
             last_log_time = time.time()
 
-            log.info("Streaming at %d FPS  (JPEG quality %d) …", args.fps, args.quality)
+            # On-demand: start paused and wait for relay "start" control
+            streaming_active = not on_demand
+            if on_demand:
+                log.info("On-demand mode: waiting for viewer (control:start)...")
+            else:
+                log.info("Streaming at %d FPS  (JPEG quality %d) …", args.fps, args.quality)
 
             while not _shutdown_requested:
+                # Check for control messages from relay
+                action = _check_control(ws)
+                if action == "start" and not streaming_active:
+                    streaming_active = True
+                    frame_count = 0
+                    last_log_time = time.time()
+                    log.info("Viewer connected — streaming started")
+                elif action == "stop" and streaming_active:
+                    streaming_active = False
+                    log.info("No viewers — streaming paused")
+
+                if not streaming_active:
+                    time.sleep(0.25)
+                    continue
+
                 loop_start = time.time()
 
                 ret, frame = cam.read()
