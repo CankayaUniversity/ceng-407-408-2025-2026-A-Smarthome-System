@@ -18,13 +18,21 @@ const NAV_ITEMS = [
     { to: '/history', icon: TrendingUp, label: 'Analytics' },
     { to: '/camera', icon: Camera, label: 'Surveillance' },
     { to: '/alerts', icon: ShieldAlert, label: 'Alerts' },
-    // Face profiles for Pi matching — any logged-in household user can manage
+    // Face profiles — admin and resident can both manage
     { to: '/residents', icon: Users, label: 'Residents' },
     { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 const Sidebar = () => {
     const { logout, user, profile } = useAuth();
+
+    // Safe avatar initial: prefer profile name, fall back to email, then 'U'
+    const displayName = profile?.name || user?.user_metadata?.name || '';
+    const avatarInitial = displayName
+        ? displayName.trim()[0].toUpperCase()
+        : (user?.email ? user.email[0].toUpperCase() : 'U');
+
+    const roleLabel = profile?.role || 'authenticated';
 
     return (
         <aside className="sidebar animate-slide-left">
@@ -64,13 +72,19 @@ const Sidebar = () => {
             <div className="sidebar-footer">
                 <div className="sidebar-user" onClick={logout} title="Sign out">
                     <div className="sidebar-avatar">
-                        {user?.name?.charAt(0).toUpperCase() ?? 'A'}
+                        {avatarInitial}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="sidebar-user-name" style={{
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                        }}>{user?.name}</div>
-                        <div className="sidebar-user-role">{profile?.role || 'authenticated'}</div>
+                        }}>
+                            {displayName || user?.email || 'User'}
+                        </div>
+                        <div className="sidebar-user-role" style={{
+                            color: roleLabel === 'admin' ? 'var(--ember-core)' : 'var(--text-muted)'
+                        }}>
+                            {roleLabel}
+                        </div>
                     </div>
                     <LogOut size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 </div>

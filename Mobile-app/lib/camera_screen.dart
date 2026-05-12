@@ -423,7 +423,7 @@ class _FeedCard extends StatelessWidget {
         tokens,
         Icons.signal_wifi_off,
         'No live stream configured',
-        'Build with --dart-define=RELAY_WS_URL=ws://...',
+        'Build with --dart-define=RELAY_WS_URL=ws://... or --dart-define=CAMERA_STREAM_URL=...',
       );
     }
     if (SupabaseConfig.cameraStreamType.toLowerCase() == 'hls') {

@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 
 import ProtectedRoute from './components/Layout/ProtectedRoute';
 import Layout from './components/Layout/Layout';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -15,12 +16,29 @@ import ResidentsPage from './pages/ResidentsPage';
 import SettingsPage from './pages/SettingsPage';
 import RoomsPage from './pages/RoomsPage';
 
+import { useAuth } from './hooks/useAuth';
+
+/**
+ * GlobalOverlays — renders app-wide overlays that need access to AuthContext.
+ * Must be inside AuthProvider but outside individual pages.
+ */
+function GlobalOverlays() {
+    const { forcePasswordChange, isAuthenticated } = useAuth();
+    if (isAuthenticated && forcePasswordChange) {
+        return <ChangePasswordModal />;
+    }
+    return null;
+}
+
 function App() {
     return (
         <ThemeProvider>
             <AuthProvider>
                 <RealtimeProvider>
                     <BrowserRouter>
+                        {/* Global overlay — shown on top of any page when needed */}
+                        <GlobalOverlays />
+
                         <Routes>
                             <Route path="/login" element={<LoginPage />} />
                             <Route element={<ProtectedRoute />}>

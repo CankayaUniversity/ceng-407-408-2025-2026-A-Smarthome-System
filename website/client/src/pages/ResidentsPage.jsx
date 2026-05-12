@@ -1,10 +1,76 @@
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle, RefreshCw } from 'lucide-react';
+import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle, RefreshCw, Mail, KeyRound, Copy, Check, UserCheck } from 'lucide-react';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
 
+/* ─── Avatar fallback: initials with gradient ──────────────── */
+function AvatarInitials({ name, size = 56 }) {
+    const initials = name
+        ? name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
+        : '?';
+    return (
+        <div style={{
+            width: size, height: size, flexShrink: 0,
+            background: 'linear-gradient(135deg, var(--ember-core), var(--violet-core))',
+            borderRadius: 'var(--r-xl)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'var(--font-display)', fontWeight: 800,
+            fontSize: size * 0.35, color: 'white',
+        }}>
+            {initials || '?'}
+        </div>
+    );
+}
+
+/* ─── Email Sent success modal ──────────────────────────────── */
+function EmailSentModal({ name, email, onClose }) {
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                <div className="modal-header">
+                    <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--jade-core)' }}>
+                        <CheckCircle size={20} /> Account Created
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><X size={20} /></button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--s5)', padding: 'var(--s6) 0', textAlign: 'center' }}>
+                    <div style={{
+                        width: 64, height: 64, borderRadius: '50%',
+                        background: 'rgba(0,229,160,0.1)', border: '2px solid rgba(0,229,160,0.25)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <Mail size={28} style={{ color: 'var(--jade-core)' }} />
+                    </div>
+                    <div>
+                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-lg)', fontWeight: 700, marginBottom: 'var(--s2)' }}>
+                            Setup email sent!
+                        </div>
+                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', lineHeight: 1.7, maxWidth: 320 }}>
+                            An account has been created for <strong style={{ color: 'var(--text-primary)' }}>{name}</strong>.
+                            A password setup link has been sent to <span style={{ fontFamily: 'monospace', color: 'var(--cyan-core)' }}>{email}</span>.
+                        </p>
+                        <p style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 'var(--s3)' }}>
+                            The resident will be prompted to set their own password when they click the link.
+                        </p>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-primary" onClick={onClose}>Done</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 const ResidentsPage = () => {
-    const { user } = useAuth();
+    const { user, isAdmin, createResidentAccount } = useAuth();
+    // State for adding account to existing resident
+    const [createAccountTarget, setCreateAccountTarget] = useState(null);
+    const [createAccountEmail, setCreateAccountEmail] = useState('');
+    const [createAccountSaving, setCreateAccountSaving] = useState(false);
+    const [createAccountError, setCreateAccountError] = useState(null);
     const [residents, setResidents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -13,6 +79,13 @@ const ResidentsPage = () => {
     const [formImagePreview, setFormImagePreview] = useState(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+
+    // Account creation fields
+    const [createAccount, setCreateAccount] = useState(false);
+    const [accountEmail, setAccountEmail] = useState('');
+
+    // Credentials / email sent modal state
+    const [emailSent, setEmailSent] = useState(null);
 
     const [captureTarget, setCaptureTarget] = useState(null);
     const [captureImage, setCaptureImage] = useState(null);
@@ -43,6 +116,16 @@ const ResidentsPage = () => {
 
     useEffect(() => { fetchResidents(); }, []);
 
+    const resetModal = () => {
+        setShowModal(false);
+        setFormName('');
+        setFormImage(null);
+        setFormImagePreview(null);
+        setCreateAccount(false);
+        setAccountEmail('');
+        setError(null);
+    };
+
     const handleAdd = async (e) => {
         e.preventDefault();
         if (!formName.trim()) return;
@@ -50,6 +133,11 @@ const ResidentsPage = () => {
             setError('You must be signed in to add a resident.');
             return;
         }
+        if (createAccount && !accountEmail.trim()) {
+            setError('Please enter an email address for the account.');
+            return;
+        }
+
         setSaving(true); setError(null);
         try {
             let photoPath = null;
@@ -67,11 +155,25 @@ const ResidentsPage = () => {
                 user_id: user.id,
                 name: formName.trim(),
                 photo_path: photoPath,
+                account_email: (createAccount && accountEmail.trim()) ? accountEmail.trim() : null,
             }).select().single();
 
             if (insertErr) throw insertErr;
-            setResidents(prev => [data, ...prev]);
-            setShowModal(false); setFormName(''); setFormImage(null); setFormImagePreview(null);
+            setResidents(prev => [{ ...data, account_email: data.account_email }, ...prev]);
+
+            // Create auth account if requested
+            if (createAccount && accountEmail.trim()) {
+                const result = await createResidentAccount(formName.trim(), accountEmail.trim());
+                if (!result.success) {
+                    setError(`Resident added, but account creation failed: ${result.error}`);
+                    setSaving(false);
+                    return;
+                }
+                resetModal();
+                setEmailSent({ name: formName.trim(), email: accountEmail.trim() });
+            } else {
+                resetModal();
+            }
         } catch (err) {
             setError(err.message || 'Failed to add resident');
         } finally { setSaving(false); }
@@ -162,7 +264,9 @@ const ResidentsPage = () => {
                 <div className="grid grid-3">
                     {residents.map((r, i) => {
                         const face = r.resident_faces?.[0];
-                        const photoUrl = face?.image_path ? getPublicUrl('event-snapshots', face.image_path) : (r.photo_path ? getPublicUrl('event-snapshots', r.photo_path) : null);
+                        const photoUrl = face?.image_path
+                            ? getPublicUrl('event-snapshots', face.image_path)
+                            : (r.photo_path ? getPublicUrl('event-snapshots', r.photo_path) : null);
                         const rawEmb = face?.embedding_json ?? r.embedding;
                         const hasEmbedding = Array.isArray(rawEmb)
                             ? rawEmb.length > 0
@@ -184,14 +288,27 @@ const ResidentsPage = () => {
                             badgeContent = 'No photo';
                             badgeClass = 'badge-neutral';
                         }
+
+                        // Safe name for display
+                        const safeName = r.name || 'Unknown';
+
                         return (
                             <div key={r.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)', animation: `fadeIn 0.4s var(--ease-out) ${i * 60}ms both`, opacity: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s4)' }}>
-                                    <div style={{ width: 56, height: 56, background: photoUrl ? 'transparent' : 'linear-gradient(135deg, var(--ember-core), var(--violet-core))', borderRadius: 'var(--r-xl)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'var(--size-xl)', color: 'white', flexShrink: 0, overflow: 'hidden' }}>
-                                        {photoUrl ? <img src={photoUrl} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : r.name.charAt(0).toUpperCase()}
+                                    {/* Avatar: photo or initials fallback */}
+                                    <div style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+                                        {photoUrl
+                                            ? <img
+                                                src={photoUrl}
+                                                alt={safeName}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                onError={e => { e.currentTarget.style.display = 'none'; }}
+                                            />
+                                            : <AvatarInitials name={safeName} size={56} />
+                                        }
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--size-lg)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                                        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--size-lg)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeName}</div>
                                         <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 2 }}>Resident</div>
                                     </div>
                                 </div>
@@ -204,6 +321,21 @@ const ResidentsPage = () => {
                                 </div>
                                 <div style={{ display: 'flex', gap: 'var(--s2)', marginTop: 'auto' }}>
                                     <button className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => handleCaptureOpen(r)}><Camera size={13} /> Upload Photo</button>
+                                    {isAdmin && !r.account_email && (
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            style={{ flex: 1, justifyContent: 'center', borderColor: 'rgba(155,89,255,0.3)', color: 'var(--violet-core)' }}
+                                            onClick={() => { setCreateAccountTarget(r); setCreateAccountEmail(''); setCreateAccountError(null); }}
+                                            title="Create login account for this resident"
+                                        >
+                                            <UserCheck size={13} /> Create Account
+                                        </button>
+                                    )}
+                                    {r.account_email && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--size-xxs)', color: 'var(--jade-core)', padding: '0 var(--s2)' }} title={r.account_email}>
+                                            <CheckCircle size={11} /> Linked
+                                        </div>
+                                    )}
                                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(r.id)}><Trash2 size={13} /></button>
                                 </div>
                             </div>
@@ -212,12 +344,13 @@ const ResidentsPage = () => {
                 </div>
             )}
 
+            {/* Add Resident Modal */}
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={resetModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>Add Resident</h2>
-                            <button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button>
+                            <button className="modal-close" onClick={resetModal}><X size={20} /></button>
                         </div>
                         {error && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{error}</div>}
                         <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s5)' }}>
@@ -230,8 +363,61 @@ const ResidentsPage = () => {
                                 {formImagePreview && <div style={{ marginBottom: 'var(--s3)' }}><img src={formImagePreview} alt="Preview" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 'var(--r-xl)', border: '2px solid var(--border-dim)' }} /></div>}
                                 <input type="file" accept="image/jpeg,image/png,image/webp" className="form-input" onChange={handleFormImageChange} disabled={saving} style={{ paddingTop: 6 }} />
                             </div>
+
+                            {/* Admin-only: Create Account Section */}
+                            {isAdmin && (
+                                <div style={{
+                                    padding: 'var(--s4)',
+                                    background: createAccount ? 'rgba(155,89,255,0.06)' : 'var(--bg-raised)',
+                                    border: `1px solid ${createAccount ? 'rgba(155,89,255,0.25)' : 'var(--border-soft)'}`,
+                                    borderRadius: 'var(--r-md)',
+                                    transition: 'all 0.25s var(--ease-out)'
+                                }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--s3)', cursor: 'pointer', userSelect: 'none' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={createAccount}
+                                            onChange={e => { setCreateAccount(e.target.checked); if (!e.target.checked) setAccountEmail(''); }}
+                                            disabled={saving}
+                                            style={{ width: 16, height: 16, accentColor: 'var(--violet-core)', cursor: 'pointer' }}
+                                        />
+                                        <div>
+                                            <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                Create a system account for this resident
+                                            </div>
+                                            <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                A login account will be created and credentials shared with you
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    {/* Email input — animated reveal */}
+                                    <div style={{
+                                        overflow: 'hidden',
+                                        maxHeight: createAccount ? 80 : 0,
+                                        opacity: createAccount ? 1 : 0,
+                                        transition: 'max-height 0.3s var(--ease-out), opacity 0.3s var(--ease-out)',
+                                        marginTop: createAccount ? 'var(--s3)' : 0
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s2)' }}>
+                                            <Mail size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                            <input
+                                                type="email"
+                                                className="form-input"
+                                                placeholder="resident@example.com"
+                                                value={accountEmail}
+                                                onChange={e => setAccountEmail(e.target.value)}
+                                                required={createAccount}
+                                                disabled={saving || !createAccount}
+                                                style={{ flex: 1 }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: 'var(--s3)', justifyContent: 'flex-end' }}>
-                                <button type="button" className="btn btn-ghost" onClick={() => { setShowModal(false); setFormImagePreview(null); }}>Cancel</button>
+                                <button type="button" className="btn btn-ghost" onClick={resetModal}>Cancel</button>
                                 <button type="submit" className="btn btn-primary" disabled={saving}>
                                     {saving ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <><UserPlus size={15} /> Add Resident</>}
                                 </button>
@@ -241,11 +427,94 @@ const ResidentsPage = () => {
                 </div>
             )}
 
+            {/* Email Sent Modal */}
+            {emailSent && (
+                <EmailSentModal
+                    name={emailSent.name}
+                    email={emailSent.email}
+                    onClose={() => setEmailSent(null)}
+                />
+            )}
+
+            {/* Create Account for Existing Resident Modal */}
+            {createAccountTarget && (
+                <div className="modal-overlay" onClick={() => setCreateAccountTarget(null)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                        <div className="modal-header">
+                            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <UserCheck size={18} style={{ color: 'var(--violet-core)' }} />
+                                Create Account — {createAccountTarget.name}
+                            </h2>
+                            <button className="modal-close" onClick={() => setCreateAccountTarget(null)}><X size={20} /></button>
+                        </div>
+                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--s5)', lineHeight: 1.6 }}>
+                            A login account will be created for this resident. They will receive a temporary password and be required to change it on first login.
+                        </p>
+                        {createAccountError && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{createAccountError}</div>}
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!createAccountEmail.trim()) return;
+                                setCreateAccountSaving(true);
+                                setCreateAccountError(null);
+                                const result = await createResidentAccount(createAccountTarget.name, createAccountEmail.trim());
+                                if (!result.success) {
+                                    setCreateAccountError(result.error || 'Account creation failed');
+                                    setCreateAccountSaving(false);
+                                    return;
+                                }
+                                // Save email to resident row
+                                await supabase.from('residents')
+                                    .update({ account_email: createAccountEmail.trim() })
+                                    .eq('id', createAccountTarget.id);
+                                setResidents(prev => prev.map(r =>
+                                    r.id === createAccountTarget.id
+                                        ? { ...r, account_email: createAccountEmail.trim() }
+                                        : r
+                                ));
+                                setCreateAccountTarget(null);
+                                setCreateAccountSaving(false);
+                                setEmailSent({ name: createAccountTarget.name, email: createAccountEmail.trim() });
+                            }}
+                            style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}
+                        >
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label">Email Address</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s2)' }}>
+                                    <Mail size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                    <input
+                                        type="email"
+                                        className="form-input"
+                                        placeholder="resident@example.com"
+                                        value={createAccountEmail}
+                                        onChange={e => setCreateAccountEmail(e.target.value)}
+                                        required
+                                        autoFocus
+                                        disabled={createAccountSaving}
+                                        style={{ flex: 1 }}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 'var(--s3)', justifyContent: 'flex-end' }}>
+                                <button type="button" className="btn btn-ghost" onClick={() => setCreateAccountTarget(null)}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={createAccountSaving || !createAccountEmail.trim()} style={{ background: 'var(--violet-core)' }}>
+                                    {createAccountSaving
+                                        ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                                        : <><UserCheck size={15} /> Create Account</>}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+
+            {/* Upload Photo Modal */}
             {captureTarget && (
                 <div className="modal-overlay" onClick={() => setCaptureTarget(null)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h2>Upload Photo — {captureTarget.name}</h2>
+                            <h2>Upload Photo — {captureTarget.name || 'Resident'}</h2>
                             <button className="modal-close" onClick={() => setCaptureTarget(null)}><X size={20} /></button>
                         </div>
                         {error && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{error}</div>}
