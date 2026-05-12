@@ -1,0 +1,18 @@
+{
+  "name": "smarthome-relay-server",
+  "version": "1.0.0",
+  "description": "WebSocket relay server — broadcasts Raspberry Pi camera frames to all connected clients.",
+  "main": "relay_server.js",
+  "scripts": {
+    "start": "node relay_server.js",
+    "dev": "node --watch relay_server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "SmartHome Team",
+  "license": "MIT"
+}

@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'models/face_capture.dart';
+import 'models/environment_data.dart';
 import 'providers/auth_provider.dart';
 import 'providers/supabase_data_provider.dart';
+import 'theme/app_theme.dart';
+import 'widgets/hazard_card.dart';
+import 'camera_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final auth = context.watch<AuthProvider>();
     final supabaseData = context.watch<SupabaseDataProvider>();
 
@@ -18,20 +23,21 @@ class HomeScreen extends StatelessWidget {
         auth.user?.userMetadata?['name'] ??
         'User';
 
-    final latestTemp = supabaseData.latestTemperature;
-    final latestHum = supabaseData.latestHumidity;
-    final latestSmoke = supabaseData.latestSmoke;
-    final latestWater = supabaseData.latestWater;
+    final tempReadings = supabaseData.temperatureReadings;
+    final humReadings = supabaseData.humidityReadings;
+    final smokeReadings = supabaseData.smokeReadings;
+    final waterReadings = supabaseData.waterReadings;
+    final motionReadings = supabaseData.motionReadings;
 
-    final temp = latestTemp != null
-        ? latestTemp.value.toStringAsFixed(0)
-        : '--';
-    final hum = latestHum != null
-        ? latestHum.value.toStringAsFixed(0)
-        : '--';
-    final smokeDetected = latestSmoke != null && latestSmoke.value > 0;
-    // water 1 = wet (good for soil), 0 = dry (needs watering → alert)
-    final waterDry = latestWater != null && latestWater.value == 0;
+    final avgTemp = _avg(tempReadings);
+    final avgHum = _avg(humReadings);
+    final activeMotion =
+        motionReadings.where((s) => s.value == 1).length;
+    final criticalAlerts = supabaseData.events
+        .where((e) =>
+            (e['priority']?.toString().toLowerCase() == 'critical') &&
+            e['acknowledged'] != true)
+        .length;
 
     final latestCamRow = supabaseData.latestCameraEvent;
     final latestCapture = latestCamRow != null
@@ -39,158 +45,118 @@ class HomeScreen extends StatelessWidget {
         : null;
 
     final recentEvents = supabaseData.events.take(3).toList();
+    final hasAnyAlert =
+        smokeReadings.any((s) => s.value > 0) ||
+            waterReadings.any((s) => s.value == 0);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: tokens.bgVoid,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => context.read<SupabaseDataProvider>().fetchAll(),
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'WELCOME BACK,',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey.shade500,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          userName,
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1a1a2e),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.search,
-                          color: Color(0xFF8C92B5)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-
-                // Daily Briefing / Alert banner
-                _buildBriefingBanner(smokeDetected, waterDry),
-                const SizedBox(height: 24),
-
-                // Temperature & Humidity
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildSensorCard(
-                        icon: Icons.thermostat,
-                        iconColor: const Color(0xFFF97316),
-                        bgColor: const Color(0xFFFFF7ED),
-                        iconBg: const Color(0xFFFFEDD5),
-                        value: '$temp°C',
-                        label: 'TEMPERATURE',
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildSensorCard(
-                        icon: Icons.water_drop_outlined,
-                        iconColor: const Color(0xFF0EA5E9),
-                        bgColor: const Color(0xFFF0F9FF),
-                        iconBg: const Color(0xFFE0F2FE),
-                        value: '$hum%',
-                        label: 'HUMIDITY',
-                      ),
-                    ),
-                  ],
+                // Header — compact
+                _Header(
+                  userName: userName,
+                  sensors: supabaseData.latestPerDeviceAndType.length,
                 ),
                 const SizedBox(height: 16),
 
-                // Smoke + Water row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatusCard(
-                        icon: Icons.cloud,
-                        label: 'SMOKE',
-                        detected: smokeDetected,
-                        detectedText: 'DETECTED',
-                        clearText: 'Clear',
-                        alertColor: const Color(0xFFFF4757),
-                        safeColor: const Color(0xFF10B981),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildStatusCard(
-                        icon: Icons.grass,
-                        label: 'WATER/SOIL',
-                        detected: waterDry,
-                        detectedText: 'DRY',
-                        clearText: 'Moist',
-                        alertColor: const Color(0xFFF97316),
-                        safeColor: const Color(0xFF52B788),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 32),
-
-                // Security Feed
-                const Text(
-                  'SECURITY FEED',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF8C92B5),
-                    letterSpacing: 1.2,
+                // Camera Hero (21:9 aspect)
+                _CameraHero(
+                  capture: latestCapture,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CameraScreen()),
                   ),
                 ),
-                const SizedBox(height: 16),
-                _buildSecurityFeed(latestCapture),
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
 
-                // Recent Alerts
+                // 2x2 stat grid — Security · Climate · Smoke · Water
+                LayoutBuilder(builder: (_, constraints) {
+                  final w = (constraints.maxWidth - 12) / 2;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      SizedBox(
+                        width: w,
+                        child: _StatCard(
+                          icon: Icons.shield,
+                          label: 'SECURITY',
+                          accent: tokens.violetCore,
+                          alert: criticalAlerts > 0,
+                          rows: [
+                            _StatRow('Motion', '$activeMotion zones'),
+                            _StatRow('Alerts', '$criticalAlerts active'),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: w,
+                        child: _StatCard(
+                          icon: Icons.thermostat,
+                          label: 'CLIMATE',
+                          accent: tokens.emberCore,
+                          alert: false,
+                          rows: [
+                            _StatRow('Avg Temp',
+                                '${avgTemp.toStringAsFixed(1)}°C'),
+                            _StatRow('Avg Hum',
+                                '${avgHum.toStringAsFixed(0)}%'),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: w,
+                        child: HazardCard(
+                          icon: Icons.cloud,
+                          label: 'SMOKE',
+                          sensors: smokeReadings,
+                          accent: tokens.sensorSmoke,
+                          alertText: 'ALERT',
+                        ),
+                      ),
+                      SizedBox(
+                        width: w,
+                        child: HazardCard(
+                          icon: Icons.water_drop,
+                          label: 'WATER',
+                          sensors: waterReadings,
+                          accent: tokens.sensorWater,
+                          alertText: 'LEAK',
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+                const SizedBox(height: 20),
+
+                // Briefing banner
+                _BriefingBanner(hasAlert: hasAnyAlert),
+                const SizedBox(height: 20),
+
+                // Recent Alerts strip
                 if (recentEvents.isNotEmpty) ...[
-                  const Text(
+                  Text(
                     'RECENT ALERTS',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF8C92B5),
+                      color: tokens.textSecondary,
                       letterSpacing: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  ...recentEvents.map((e) => _buildAlertRow(e)),
+                  const SizedBox(height: 10),
+                  ...recentEvents.map((e) => _AlertRow(event: e)),
                 ],
-
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -199,327 +165,463 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBriefingBanner(bool smokeDetected, bool waterDry) {
-    final hasAlert = smokeDetected || waterDry;
-    final alertMsg = smokeDetected
-        ? 'Smoke detected! Ventilate the area and check your sensors.'
-        : waterDry
-            ? 'Soil is dry! Your plants need watering.'
-            : 'All systems operational. No critical issues reported today.';
+  static double _avg(List<SensorReading> list) {
+    if (list.isEmpty) return 0;
+    final sum = list.map((s) => s.value).reduce((a, b) => a + b);
+    return sum / list.length;
+  }
+}
 
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: hasAlert
-              ? [const Color(0xFFFF6348), const Color(0xFFFF4757)]
-              : [const Color(0xFF6B72D1), const Color(0xFF5C61B2)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: (hasAlert
-                    ? const Color(0xFFFF4757)
-                    : const Color(0xFF5C61B2))
-                .withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+// ─── Header ─────────────────────────────────────────────────
+
+class _Header extends StatelessWidget {
+  final String userName;
+  final int sensors;
+  const _Header({required this.userName, required this.sensors});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                'WELCOME BACK,',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textMuted,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                userName,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: tokens.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    width: 6,
+                    height: 6,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: tokens.jadeCore,
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      hasAlert
-                          ? Icons.warning_amber_rounded
-                          : Icons.auto_awesome,
-                      color: Colors.white,
-                      size: 18,
-                    ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 6),
                   Text(
-                    hasAlert ? 'ALERT' : 'DAILY BRIEFING',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      letterSpacing: 1.1,
+                    '$sensors sensors active',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: tokens.textMuted,
                     ),
                   ),
                 ],
               ),
-              const Icon(Icons.arrow_forward,
-                  color: Colors.white, size: 20),
             ],
           ),
-          const SizedBox(height: 20),
-          Text(
-            alertMsg,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              height: 1.4,
-              fontWeight: FontWeight.w500,
-            ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Camera Hero ─────────────────────────────────────────────
+
+class _CameraHero extends StatelessWidget {
+  final FaceCapture? capture;
+  final VoidCallback onTap;
+  const _CameraHero({required this.capture, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final imageUrl = capture?.imageUrl;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AspectRatio(
+        aspectRatio: 21 / 9,
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0C10),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imageUrl != null)
+                Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      _empty(tokens, 'Snapshot unavailable'),
+                )
+              else
+                _empty(tokens, 'No Recent Capture'),
+
+              // Gradient overlay
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.05),
+                      Colors.black.withValues(alpha: 0.25),
+                      Colors.black.withValues(alpha: 0.92),
+                    ],
+                    stops: const [0.0, 0.55, 1.0],
+                  ),
+                ),
+              ),
+
+              // Top-left LIVE pill
+              Positioned(
+                top: 12,
+                left: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: tokens.crimsonCore.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 5,
+                        height: 5,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'LAST SNAPSHOT',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Top-right classification badge
+              if (capture != null)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: capture!.isResident
+                          ? tokens.jadeCore.withValues(alpha: 0.9)
+                          : tokens.crimsonCore.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      capture!.isResident ? 'RESIDENT' : 'UNKNOWN',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Bottom row — title + time
+              Positioned(
+                bottom: 10,
+                left: 12,
+                right: 12,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Front Door Surveillance',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (capture != null)
+                      Text(
+                        DateFormat('HH:mm').format(capture!.capturedAt),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildStatusCard({
-    required IconData icon,
-    required String label,
-    required bool detected,
-    required String detectedText,
-    required String clearText,
-    required Color alertColor,
-    required Color safeColor,
-  }) {
-    final color = detected ? alertColor : safeColor;
+  Widget _empty(AppTokens tokens, String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: detected
-            ? alertColor.withOpacity(0.06)
-            : safeColor.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            tokens.bgElevated,
+            tokens.bgBase,
+          ],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.videocam_off_outlined,
+                size: 28, color: Colors.white.withValues(alpha: 0.5)),
+            const SizedBox(height: 6),
+            Text(
+              text,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Stat Card ────────────────────────────────────────────────
+
+class _StatRow {
+  final String label;
+  final String value;
+  _StatRow(this.label, this.value);
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final bool alert;
+  final List<_StatRow> rows;
+
+  const _StatCard({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.alert,
+    required this.rows,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: alert
+            ? tokens.crimsonCore.withValues(alpha: 0.06)
+            : tokens.bgSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: alert
+              ? tokens.crimsonCore.withValues(alpha: 0.25)
+              : tokens.borderSoft,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: accent),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: tokens.textSecondary,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...rows.map((r) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      r.label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: tokens.textMuted,
+                      ),
+                    ),
+                    Text(
+                      r.value,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Briefing Banner ──────────────────────────────────────────
+
+class _BriefingBanner extends StatelessWidget {
+  final bool hasAlert;
+  const _BriefingBanner({required this.hasAlert});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colors = hasAlert
+        ? [tokens.crimsonCore, tokens.emberCore]
+        : [tokens.violetCore, tokens.cyanCore];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colors.first.withValues(alpha: 0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: Colors.white.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(
+              hasAlert ? Icons.warning_amber_rounded : Icons.auto_awesome,
+              color: Colors.white,
+              size: 18,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade500,
-                    letterSpacing: 0.8,
+                  hasAlert ? 'ATTENTION REQUIRED' : 'ALL SYSTEMS GREEN',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
-                  detected ? detectedText : clearText,
-                  style: TextStyle(
+                  hasAlert
+                      ? 'One or more sensors triggered an alert. Tap an alert below for details.'
+                      : 'No critical issues reported. Your home is operating normally.',
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: color,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
                   ),
                 ),
               ],
             ),
           ),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildSensorCard({
-    required IconData icon,
-    required Color iconColor,
-    required Color bgColor,
-    required Color iconBg,
-    required String value,
-    required String label,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-            child: Icon(icon, color: iconColor),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1a1a2e),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF8C92B5),
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+// ─── Alert Row ────────────────────────────────────────────────
 
-  Widget _buildSecurityFeed(FaceCapture? capture) {
-    final imageUrl = capture?.imageUrl;
+class _AlertRow extends StatelessWidget {
+  final Map<String, dynamic> event;
+  const _AlertRow({required this.event});
 
-    return Container(
-      height: 180,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFF111418),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-        image: imageUrl != null
-            ? DecorationImage(
-                image: NetworkImage(imageUrl),
-                fit: BoxFit.cover,
-                colorFilter: ColorFilter.mode(
-                    Colors.black.withOpacity(0.3), BlendMode.darken),
-              )
-            : null,
-      ),
-      child: Stack(
-        children: [
-          if (imageUrl == null)
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2E1C21),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.videocam_off_outlined,
-                        color: Color(0xFFFF4757), size: 24),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'No Recent Capture',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-            ),
-          if (capture != null)
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: capture.isResident
-                      ? const Color(0xFF00E5A0).withOpacity(0.9)
-                      : const Color(0xFFFF4757).withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  capture.isResident ? 'RESIDENT' : 'UNKNOWN',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5),
-                ),
-              ),
-            ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(24)),
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.8),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    capture != null
-                        ? capture.displayName
-                        : 'SECURITY CAMERA',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  if (capture != null)
-                    Text(
-                      DateFormat('HH:mm').format(capture.capturedAt),
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 11),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAlertRow(Map<String, dynamic> event) {
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final eventType =
         (event['event_type'] ?? event['type'] ?? '').toString();
-    final message =
-        event['message']?.toString() ?? eventType;
+    final message = event['message']?.toString() ?? eventType;
     final createdAt =
         DateTime.tryParse(event['created_at']?.toString() ?? '');
 
@@ -528,45 +630,48 @@ class HomeScreen extends StatelessWidget {
     switch (eventType.toLowerCase()) {
       case 'fire_alert':
         icon = Icons.local_fire_department;
-        color = const Color(0xFFFF4757);
+        color = tokens.crimsonCore;
         break;
       case 'flood':
         icon = Icons.water_drop;
-        color = const Color(0xFF3B9EFF);
+        color = tokens.sensorWater;
         break;
       case 'stranger_detected':
         icon = Icons.person;
-        color = const Color(0xFFF97316);
+        color = tokens.emberCore;
         break;
       default:
         icon = Icons.notifications;
-        color = const Color(0xFF8C92B5);
+        color = tokens.textSecondary;
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade100),
+        color: tokens.bgSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tokens.borderSoft),
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(icon, color: color, size: 16),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: tokens.textPrimary,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -574,8 +679,7 @@ class HomeScreen extends StatelessWidget {
           if (createdAt != null)
             Text(
               DateFormat('HH:mm').format(createdAt),
-              style:
-                  TextStyle(fontSize: 12, color: Colors.grey.shade400),
+              style: TextStyle(fontSize: 11, color: tokens.textMuted),
             ),
         ],
       ),

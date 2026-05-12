@@ -11,6 +11,7 @@ class SupabaseDataProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _cameraEvents = [];
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _residents = [];
+  List<Map<String, dynamic>> _devices = [];
   Map<String, dynamic>? _latestCameraEvent;
   bool _loading = false;
   String? _error;
@@ -24,14 +25,54 @@ class SupabaseDataProvider extends ChangeNotifier {
       List.unmodifiable(_cameraEvents);
   List<Map<String, dynamic>> get events => List.unmodifiable(_events);
   List<Map<String, dynamic>> get residents => List.unmodifiable(_residents);
+  List<Map<String, dynamic>> get devices => List.unmodifiable(_devices);
   Map<String, dynamic>? get latestCameraEvent => _latestCameraEvent;
   bool get loading => _loading;
   String? get error => _error;
+
+  Map<String, Map<String, dynamic>> get devicesById => {
+        for (final d in _devices)
+          if (d['id'] != null) d['id'].toString(): d
+      };
 
   SensorReading? get latestTemperature => _latestPerType['temperature'];
   SensorReading? get latestHumidity => _latestPerType['humidity'];
   SensorReading? get latestSmoke => _latestPerType['smoke'];
   SensorReading? get latestWater => _latestPerType['water'];
+
+  /// Returns latest reading per (device_id, sensor_type) pair.
+  /// Web parity with `DashboardPage.fetchData` `latestByType` map.
+  List<SensorReading> get latestPerDeviceAndType {
+    final byKey = <String, SensorReading>{};
+    for (final r in _sensorReadings) {
+      final key = '${r.deviceId ?? '_'}_${r.sensorType}';
+      final existing = byKey[key];
+      if (existing == null || r.recordedAt.isAfter(existing.recordedAt)) {
+        byKey[key] = r;
+      }
+    }
+    return byKey.values.toList();
+  }
+
+  List<SensorReading> get smokeReadings => latestPerDeviceAndType
+      .where((r) => r.sensorType == 'smoke')
+      .toList();
+
+  List<SensorReading> get waterReadings => latestPerDeviceAndType
+      .where((r) => r.sensorType == 'water')
+      .toList();
+
+  List<SensorReading> get temperatureReadings => latestPerDeviceAndType
+      .where((r) => r.sensorType == 'temperature')
+      .toList();
+
+  List<SensorReading> get humidityReadings => latestPerDeviceAndType
+      .where((r) => r.sensorType == 'humidity')
+      .toList();
+
+  List<SensorReading> get motionReadings => latestPerDeviceAndType
+      .where((r) => r.sensorType == 'motion')
+      .toList();
 
   SupabaseDataProvider() {
     fetchAll();
@@ -70,9 +111,12 @@ class SupabaseDataProvider extends ChangeNotifier {
       _safeFetch('residents', () async {
         _residents = await SupabaseDataService.getResidents();
       }, errors),
+      _safeFetch('devices', () async {
+        _devices = await SupabaseDataService.getDevices();
+      }, errors),
     ]);
 
-    if (errors.length == 6) {
+    if (errors.length == 7) {
       _error = 'Failed to load data. Pull to refresh.';
     } else if (errors.isNotEmpty) {
       debugPrint('SupabaseDataProvider partial errors: $errors');
@@ -128,6 +172,34 @@ class SupabaseDataProvider extends ChangeNotifier {
           await SupabaseDataService.getFaceCaptures(limit: limit);
       notifyListeners();
     } catch (_) {}
+  }
+
+  Future<void> fetchDevices() async {
+    try {
+      _devices = await SupabaseDataService.getDevices();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// Optimistic device → room reassignment with rollback on error.
+  /// Web parity with `RoomsPage.assignDeviceRoom`.
+  Future<bool> assignDeviceRoom(String deviceId, String room) async {
+    final prev = List<Map<String, dynamic>>.from(_devices);
+    _devices = _devices
+        .map((d) => d['id']?.toString() == deviceId
+            ? {...d, 'room': room}
+            : d)
+        .toList();
+    notifyListeners();
+    try {
+      await SupabaseDataService.updateDeviceRoom(deviceId, room);
+      return true;
+    } catch (e) {
+      debugPrint('assignDeviceRoom failed: $e');
+      _devices = prev;
+      notifyListeners();
+      return false;
+    }
   }
 
   void prependCameraEvent(Map<String, dynamic> row) {

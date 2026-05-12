@@ -117,6 +117,102 @@
   --t-base:    280ms;
   --t-slow:    500ms;
   --t-lush:    800ms;
+
+  /* Ambient (overridden in light theme) */
+  --ambient-1: rgba(255, 107, 53, 0.04);
+  --ambient-2: rgba(0, 212, 255, 0.04);
+  --ambient-3: rgba(155, 89, 255, 0.03);
+  --shadow-card: 0 24px 64px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 40px 120px rgba(0, 0, 0, 0.6);
+  --header-tint: rgba(8, 11, 16, 0.8);
+  --select-arrow: %234c5668;
+
+  /* Floor-plan blueprint canvas (overridden in light theme) */
+  --blueprint-bg:           #0a0c10;
+  --blueprint-grid:         rgba(255, 255, 255, 0.08);
+  --blueprint-frame:        rgba(255, 255, 255, 0.10);
+  --blueprint-room-border:  rgba(255, 255, 255, 0.10);
+  --blueprint-room-label:   rgba(255, 255, 255, 0.90);
+  --blueprint-room-meta:    rgba(255, 255, 255, 0.50);
+  --blueprint-pin-bg:       rgba(15, 17, 23, 0.85);
+  --blueprint-pin-shadow:   0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Light Theme Overrides ──────────────────────────────────── */
+:root[data-theme="light"] {
+  /* Soft paper palette */
+  --bg-void:       #f3f5fa;
+  --bg-base:       #ffffff;
+  --bg-raised:     #f7f9fc;
+  --bg-surface:    #ffffff;
+  --bg-elevated:   #f1f4f9;
+  --bg-overlay:    #e9edf4;
+  --bg-highlight:  #e2e7f0;
+
+  /* Slightly desaturated accents for daylight contrast */
+  --ember-core:    #e85d2a;
+  --ember-bright:  #ff7a44;
+  --ember-glow:    rgba(232, 93, 42, 0.18);
+  --ember-trace:   rgba(232, 93, 42, 0.10);
+  --ember-subtle:  rgba(232, 93, 42, 0.06);
+
+  --cyan-core:     #0099c4;
+  --cyan-bright:   #00b6e0;
+  --cyan-glow:     rgba(0, 153, 196, 0.18);
+  --cyan-trace:    rgba(0, 153, 196, 0.08);
+
+  --violet-core:   #7a3fe4;
+  --violet-bright: #9462ff;
+  --violet-glow:   rgba(122, 63, 228, 0.18);
+
+  --jade-core:     #00a878;
+  --jade-glow:     rgba(0, 168, 120, 0.18);
+
+  --amber-core:    #d68910;
+  --amber-glow:    rgba(214, 137, 16, 0.18);
+
+  --crimson-core:  #d8284a;
+  --crimson-glow:  rgba(216, 40, 74, 0.18);
+
+  /* Ink */
+  --text-primary:   #0c121f;
+  --text-secondary: #4a5468;
+  --text-muted:     #6b7587;
+  --text-whisper:   #aab2c2;
+
+  /* Borders darken */
+  --border-dim:    rgba(12, 18, 31, 0.06);
+  --border-soft:   rgba(12, 18, 31, 0.10);
+  --border-medium: rgba(12, 18, 31, 0.16);
+  --border-bright: rgba(12, 18, 31, 0.28);
+
+  /* Sensor accents follow accent recolour */
+  --sensor-temp:     #e85d2a;
+  --sensor-humid:    #0099c4;
+  --sensor-smoke:    #d8284a;
+  --sensor-water:    #2c7fd8;
+  --sensor-motion:   #7a3fe4;
+  --sensor-weight:   #00a878;
+  --sensor-moisture: #00a878;
+  --sensor-light:    #d68910;
+
+  --ambient-1: rgba(232, 93, 42, 0.06);
+  --ambient-2: rgba(0, 153, 196, 0.06);
+  --ambient-3: rgba(122, 63, 228, 0.04);
+  --shadow-card: 0 12px 32px rgba(15, 23, 42, 0.10);
+  --shadow-modal: 0 30px 80px rgba(15, 23, 42, 0.18);
+  --header-tint: rgba(255, 255, 255, 0.85);
+  --select-arrow: %236b7587;
+
+  /* Floor-plan blueprint — light variant */
+  --blueprint-bg:           #eef2f8;
+  --blueprint-grid:         rgba(12, 18, 31, 0.08);
+  --blueprint-frame:        rgba(12, 18, 31, 0.12);
+  --blueprint-room-border:  rgba(12, 18, 31, 0.14);
+  --blueprint-room-label:   rgba(12, 18, 31, 0.85);
+  --blueprint-room-meta:    rgba(12, 18, 31, 0.50);
+  --blueprint-pin-bg:       rgba(255, 255, 255, 0.95);
+  --blueprint-pin-shadow:   0 4px 10px rgba(15, 23, 42, 0.12);
 }
 
 /* ─── Reset ──────────────────────────────────────────────────── */
@@ -137,9 +233,20 @@ body {
   line-height: 1.65;
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color var(--t-base) var(--ease-out), color var(--t-base) var(--ease-out);
 }
 
 #root { min-height: 100vh; }
+
+body, .card, .sidebar, .header, .form-input, .table-container,
+.modal, .auth-card, .auth-page, .auth-visual, .auth-panel,
+.btn-secondary, .btn-ghost {
+  transition:
+    background-color var(--t-base) var(--ease-out),
+    color var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+}
 
 a {
   color: var(--ember-core);
@@ -164,9 +271,9 @@ body::before {
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 800px 600px at 20% 10%, rgba(255, 107, 53, 0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 600px 800px at 80% 80%, rgba(0, 212, 255, 0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 500px 500px at 50% 50%, rgba(155, 89, 255, 0.03) 0%, transparent 70%);
+    radial-gradient(ellipse 800px 600px at 20% 10%, var(--ambient-1) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 800px at 80% 80%, var(--ambient-2) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 500px at 50% 50%, var(--ambient-3) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -391,7 +498,7 @@ body::before {
   position: fixed;
   top: 0; left: var(--sidebar-width); right: 0;
   height: var(--header-height);
-  background: rgba(8, 11, 16, 0.8);
+  background: var(--header-tint);
   backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--border-dim);
   display: flex;
@@ -455,7 +562,7 @@ body::before {
 .card:hover {
   border-color: var(--border-medium);
   transform: translateY(-2px);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-card);
 }
 
 .card-glass {
@@ -631,6 +738,10 @@ select.form-input {
   background-repeat: no-repeat;
   background-position: right var(--s3) center;
   padding-right: var(--s8);
+}
+
+:root[data-theme="light"] select.form-input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7587'/%3E%3C/svg%3E");
 }
 
 select.form-input option { background: var(--bg-surface); }
@@ -898,7 +1009,7 @@ tr:hover td { background: var(--border-dim); }
   background: var(--bg-surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-2xl);
-  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-modal);
 }
 
 .auth-logo {
@@ -976,7 +1087,7 @@ tr:hover td { background: var(--border-dim); }
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-modal);
   animation: modalSlide 0.3s var(--ease-out);
 }
 

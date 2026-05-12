@@ -126,6 +126,28 @@ class SupabaseDataService {
     await _client.from(SupabaseConfig.residentsTable).delete().eq('id', id);
   }
 
+  // ─── DEVICES ────────────────────────────────────────────────
+
+  /// Returns the device registry (id, name, room).
+  ///
+  /// The `room` column is set by [updateDeviceRoom] when the user
+  /// reassigns a device on the floor plan. When null/empty the UI
+  /// falls back to the heuristic `_resolveRoom(device.name)`.
+  static Future<List<Map<String, dynamic>>> getDevices() async {
+    final data = await _client
+        .from(SupabaseConfig.devicesTable)
+        .select('id, name, room')
+        .order('name', ascending: true);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Reassigns a device to a different room on the floor plan.
+  static Future<void> updateDeviceRoom(String deviceId, String room) async {
+    await _client
+        .from(SupabaseConfig.devicesTable)
+        .update({'room': room}).eq('id', deviceId);
+  }
+
   // ─── FACE CAPTURES (legacy compat) ─────────────────────────
 
   static Future<List<FaceCapture>> getFaceCaptures({int limit = 20}) async {

@@ -21,6 +21,21 @@ ALTER TABLE residents ADD COLUMN IF NOT EXISTS person_id TEXT;
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS photo_path TEXT;
 ALTER TABLE residents ADD COLUMN IF NOT EXISTS embedding JSONB;
 
+-- ── Editable sensor-to-room assignment on devices ────────────
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS room TEXT;
+
+-- Heuristic backfill: derive a room from the device name only when unset.
+UPDATE devices SET room =
+  CASE
+    WHEN lower(name) LIKE '%kitchen%'                                 THEN 'kitchen'
+    WHEN lower(name) LIKE '%bedroom%'                                 THEN 'bedroom'
+    WHEN lower(name) LIKE '%bath%'                                    THEN 'bathroom'
+    WHEN lower(name) LIKE '%garden%'                                  THEN 'garden'
+    WHEN lower(name) LIKE ANY(ARRAY['%door%','%front%','%entrance%']) THEN 'entrance'
+    ELSE 'living'
+  END
+WHERE room IS NULL;
+
 -- ── residents.user_id must reference Supabase Auth (React login), not legacy public.users ──
 -- Error without this: insert violates foreign key constraint "residents_user_id_fkey"
 ALTER TABLE residents DROP CONSTRAINT IF EXISTS residents_user_id_fkey;
@@ -64,6 +79,13 @@ CREATE POLICY "profiles_insert_own"
 DROP POLICY IF EXISTS "devices_select_auth" ON devices;
 CREATE POLICY "devices_select_auth"
   ON devices FOR SELECT USING (auth.role() = 'authenticated');
+
+-- Allow authenticated clients to update device metadata (e.g. room assignment)
+DROP POLICY IF EXISTS "devices_update_auth" ON devices;
+CREATE POLICY "devices_update_auth"
+  ON devices FOR UPDATE
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- Sensor readings
 DROP POLICY IF EXISTS "sensor_readings_select_auth" ON sensor_readings;

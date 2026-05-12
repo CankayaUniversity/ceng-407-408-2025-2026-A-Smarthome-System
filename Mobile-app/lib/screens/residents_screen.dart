@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
 import '../services/supabase_data_service.dart';
+import '../theme/app_theme.dart';
 
 class ResidentsScreen extends StatefulWidget {
   const ResidentsScreen({super.key});
@@ -46,6 +47,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
   }
 
   Future<void> _addResident() async {
+    final tokens = context.tokens;
     final nameController = TextEditingController();
     File? selectedImage;
 
@@ -57,9 +59,10 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
         builder: (ctx, setModalState) => Container(
           padding: EdgeInsets.fromLTRB(
               24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          decoration: BoxDecoration(
+            color: tokens.bgSurface,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -70,27 +73,33 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: tokens.borderMedium,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text('Add Resident',
+              Text('Add Resident',
                   style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1a1a2e))),
+                      color: tokens.textPrimary)),
               const SizedBox(height: 20),
               TextField(
                 controller: nameController,
+                style: TextStyle(color: tokens.textPrimary),
                 decoration: InputDecoration(
                   labelText: 'Name',
-                  prefixIcon: const Icon(Icons.person),
+                  labelStyle: TextStyle(color: tokens.textSecondary),
+                  prefixIcon: Icon(Icons.person, color: tokens.textSecondary),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: tokens.borderMedium)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: tokens.borderSoft)),
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: tokens.bgRaised,
                 ),
               ),
               const SizedBox(height: 16),
@@ -107,9 +116,9 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                   height: 120,
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: tokens.bgRaised,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(color: tokens.borderSoft),
                     image: selectedImage != null
                         ? DecorationImage(
                             image: FileImage(selectedImage!),
@@ -121,11 +130,11 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(Icons.add_a_photo,
-                                size: 32, color: Colors.grey.shade400),
+                                size: 32, color: tokens.textWhisper),
                             const SizedBox(height: 8),
                             Text('Tap to add photo',
                                 style: TextStyle(
-                                    color: Colors.grey.shade500,
+                                    color: tokens.textMuted,
                                     fontSize: 13)),
                           ],
                         )
@@ -149,7 +158,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                       style: TextStyle(
                           fontSize: 15, fontWeight: FontWeight.w600)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF5C61B2),
+                    backgroundColor: tokens.emberCore,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
@@ -164,6 +173,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
     );
 
     if (result != null) {
+      if (!mounted) return;
       try {
         setState(() => _loading = true);
         final userId = context.read<AuthProvider>().user?.id ?? '';
@@ -178,8 +188,9 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
           await Supabase.instance.client.storage
               .from(SupabaseConfig.snapshotBucket)
               .uploadBinary(fileName, bytes,
-                  fileOptions:
-                      FileOptions(contentType: 'image/${ext == 'jpg' ? 'jpeg' : ext}'));
+                  fileOptions: FileOptions(
+                      contentType:
+                          'image/${ext == 'jpg' ? 'jpeg' : ext}'));
           photoPath = fileName;
         }
 
@@ -201,22 +212,23 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
   }
 
   Future<void> _deleteResident(String id) async {
+    final tokens = context.tokens;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Resident'),
         content:
             const Text('Are you sure you want to remove this resident?'),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child:
-                const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text('Delete',
+                style: TextStyle(color: tokens.crimsonCore)),
           ),
         ],
       ),
@@ -252,8 +264,8 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
       await Supabase.instance.client.storage
           .from(SupabaseConfig.snapshotBucket)
           .uploadBinary(fileName, bytes,
-              fileOptions:
-                  FileOptions(contentType: 'image/${ext == 'jpg' ? 'jpeg' : ext}'));
+              fileOptions: FileOptions(
+                  contentType: 'image/${ext == 'jpg' ? 'jpeg' : ext}'));
 
       await SupabaseDataService.updateResident(id, {'photo_path': fileName});
       _fetchResidents();
@@ -272,7 +284,6 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
   }
 
   String? _getResidentPhotoUrl(Map<String, dynamic> resident) {
-    // Prefer resident_faces[0].image_path, fallback to photo_path
     final faces = resident['resident_faces'] as List?;
     final facePath = (faces != null && faces.isNotEmpty)
         ? faces.first['image_path']?.toString()
@@ -284,13 +295,23 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: tokens.bgVoid,
+      appBar: AppBar(
+        backgroundColor: tokens.bgVoid,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: tokens.textPrimary),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addResident,
         icon: const Icon(Icons.person_add),
         label: const Text('Add Resident'),
-        backgroundColor: const Color(0xFF5C61B2),
+        backgroundColor: tokens.emberCore,
         foregroundColor: Colors.white,
       ),
       body: SafeArea(
@@ -300,19 +321,19 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Residents',
+                      Text('Residents',
                           style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF1a1a2e))),
+                              color: tokens.textPrimary)),
                       const SizedBox(height: 4),
                       Text('${_residents.length} registered faces',
                           style: TextStyle(
-                              fontSize: 14, color: Colors.grey.shade500)),
+                              fontSize: 14, color: tokens.textMuted)),
                     ],
                   ),
                 ),
@@ -328,18 +349,17 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.cloud_off,
-                            size: 56, color: Colors.grey.shade300),
+                            size: 56, color: tokens.textWhisper),
                         const SizedBox(height: 12),
                         Text(_error!,
-                            style:
-                                TextStyle(color: Colors.grey.shade500)),
+                            style: TextStyle(color: tokens.textMuted)),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           onPressed: _fetchResidents,
                           icon: const Icon(Icons.refresh, size: 18),
                           label: const Text('Retry'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5C61B2),
+                            backgroundColor: tokens.emberCore,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -354,16 +374,15 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.group_add,
-                            size: 56, color: Colors.grey.shade300),
+                            size: 56, color: tokens.textWhisper),
                         const SizedBox(height: 12),
                         Text('No residents yet',
                             style:
-                                TextStyle(color: Colors.grey.shade500)),
+                                TextStyle(color: tokens.textMuted)),
                         const SizedBox(height: 4),
                         Text('Tap + to add a person',
                             style: TextStyle(
-                                color: Colors.grey.shade400,
-                                fontSize: 13)),
+                                color: tokens.textWhisper, fontSize: 13)),
                       ],
                     ),
                   ),
@@ -373,7 +392,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
-                      (_, i) => _buildResidentCard(_residents[i]),
+                      (_, i) => _buildResidentCard(_residents[i], tokens),
                       childCount: _residents.length,
                     ),
                   ),
@@ -386,7 +405,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
     );
   }
 
-  Widget _buildResidentCard(Map<String, dynamic> resident) {
+  Widget _buildResidentCard(Map<String, dynamic> resident, AppTokens tokens) {
     final name = resident['name'] ?? 'Unknown';
     final hasEmbedding = resident['embedding'] != null;
     final id = resident['id']?.toString() ?? '';
@@ -396,12 +415,12 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tokens.bgSurface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: tokens.borderSoft),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 3)),
         ],
@@ -415,7 +434,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
               height: 56,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                color: const Color(0xFF5C61B2).withOpacity(0.1),
+                color: tokens.emberCore.withValues(alpha: 0.1),
                 image: imageUrl != null
                     ? DecorationImage(
                         image: NetworkImage(imageUrl), fit: BoxFit.cover)
@@ -425,10 +444,10 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                   ? Center(
                       child: Text(
                         name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF5C61B2)),
+                            color: tokens.emberCore),
                       ),
                     )
                   : null,
@@ -440,8 +459,10 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(name,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: tokens.textPrimary)),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -450,8 +471,8 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: hasEmbedding
-                            ? const Color(0xFF00E5A0).withOpacity(0.12)
-                            : Colors.orange.withOpacity(0.12),
+                            ? tokens.jadeCore.withValues(alpha: 0.12)
+                            : tokens.amberCore.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -460,15 +481,15 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: hasEmbedding
-                              ? const Color(0xFF00E5A0)
-                              : Colors.orange,
+                              ? tokens.jadeCore
+                              : tokens.amberCore,
                         ),
                       ),
                     ),
                     if (imageUrl != null) ...[
                       const SizedBox(width: 8),
                       Icon(Icons.photo_camera,
-                          size: 14, color: Colors.grey.shade400),
+                          size: 14, color: tokens.textWhisper),
                     ],
                   ],
                 ),
@@ -478,13 +499,13 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
           IconButton(
             onPressed: () => _updatePhoto(id),
             icon: const Icon(Icons.camera_alt, size: 20),
-            color: Colors.grey.shade400,
+            color: tokens.textWhisper,
             tooltip: 'Update Photo',
           ),
           IconButton(
             onPressed: () => _deleteResident(id),
             icon: const Icon(Icons.delete_outline, size: 20),
-            color: Colors.red.shade300,
+            color: tokens.crimsonCore.withValues(alpha: 0.7),
             tooltip: 'Delete',
           ),
         ],

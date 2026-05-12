@@ -4,37 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/supabase_data_provider.dart';
 import '../models/environment_data.dart';
-
-const List<Map<String, dynamic>> _kMetrics = [
-  {
-    'key': 'temperature',
-    'label': 'Temp',
-    'unit': '°C',
-    'icon': Icons.thermostat,
-    'color': Color(0xFFFF6B35),
-  },
-  {
-    'key': 'humidity',
-    'label': 'Humidity',
-    'unit': '%',
-    'icon': Icons.water_drop,
-    'color': Color(0xFF3B9EFF),
-  },
-  {
-    'key': 'water',
-    'label': 'Water',
-    'unit': '',
-    'icon': Icons.grass,
-    'color': Color(0xFF52B788),
-  },
-  {
-    'key': 'smoke',
-    'label': 'Smoke',
-    'unit': '',
-    'icon': Icons.cloud,
-    'color': Color(0xFFFF6348),
-  },
-];
+import '../theme/app_theme.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -47,11 +17,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String _selectedMetric = 'temperature';
   String _timeRange = '24h';
 
-  Map<String, dynamic> get _currentMetric =>
-      _kMetrics.firstWhere((m) => m['key'] == _selectedMetric);
+  List<Map<String, dynamic>> _metrics(AppTokens tokens) => [
+        {
+          'key': 'temperature',
+          'label': 'Temp',
+          'unit': '°C',
+          'icon': Icons.thermostat,
+          'color': tokens.sensorTemp,
+        },
+        {
+          'key': 'humidity',
+          'label': 'Humidity',
+          'unit': '%',
+          'icon': Icons.water_drop,
+          'color': tokens.sensorHumid,
+        },
+        {
+          'key': 'water',
+          'label': 'Water',
+          'unit': '',
+          'icon': Icons.grass,
+          'color': tokens.sensorMoisture,
+        },
+        {
+          'key': 'smoke',
+          'label': 'Smoke',
+          'unit': '',
+          'icon': Icons.cloud,
+          'color': tokens.sensorSmoke,
+        },
+      ];
 
-  String get _unit => _currentMetric['unit'] as String;
-  Color get _color => _currentMetric['color'] as Color;
+  Map<String, dynamic> _currentMetric(AppTokens tokens) =>
+      _metrics(tokens).firstWhere((m) => m['key'] == _selectedMetric);
 
   Duration get _rangeDuration {
     switch (_timeRange) {
@@ -67,11 +65,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
   int get _bucketCount {
     switch (_timeRange) {
       case '7d':
-        return 7 * 6; // 42 buckets = every 4 hours
+        return 7 * 6;
       case '30d':
-        return 30; // 30 buckets = 1 per day
+        return 30;
       default:
-        return 24; // 24 buckets = 1 per hour
+        return 24;
     }
   }
 
@@ -81,8 +79,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return all.where((d) => d.recordedAt.isAfter(from)).toList();
   }
 
-  /// Bucketize readings into fixed time slots, averaging values per bucket.
-  /// Empty buckets get value 0 so the chart shows the full time range.
   List<_ChartBucket> _bucketize(List<SensorReading> readings) {
     final now = DateTime.now();
     final from = now.subtract(_rangeDuration);
@@ -101,7 +97,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         buckets[idx].values.add(r.value);
       }
     }
-
     return buckets;
   }
 
@@ -121,7 +116,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return sum / data.length;
   }
 
-  Widget _buildChart(List<_ChartBucket> buckets, Color color) {
+  Widget _buildChart(
+      List<_ChartBucket> buckets, Color color, String unit, AppTokens tokens) {
     final spots = buckets.asMap().entries.map((e) {
       return FlSpot(e.key.toDouble(), e.value.avg);
     }).toList();
@@ -145,8 +141,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
       }
     }
 
-    final bottomInterval =
-        _timeRange == '24h' ? 6.0 : _timeRange == '7d' ? 6.0 : 5.0;
+    final bottomInterval = _timeRange == '24h'
+        ? 6.0
+        : _timeRange == '7d'
+            ? 6.0
+            : 5.0;
 
     return LineChart(
       LineChartData(
@@ -155,13 +154,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
           drawVerticalLine: false,
           horizontalInterval: spread / 4,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: Colors.grey.shade100, strokeWidth: 1),
+              FlLine(color: tokens.borderSoft, strokeWidth: 1),
         ),
         titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false)),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -171,8 +170,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
                   formatLabel(v),
-                  style:
-                      TextStyle(fontSize: 9, color: Colors.grey.shade400),
+                  style: TextStyle(fontSize: 9, color: tokens.textMuted),
                 ),
               ),
             ),
@@ -183,7 +181,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               reservedSize: 40,
               getTitlesWidget: (v, _) => Text(
                 v.toStringAsFixed(0),
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+                style: TextStyle(fontSize: 10, color: tokens.textMuted),
               ),
             ),
           ),
@@ -216,8 +214,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             fitInsideVertically: true,
             fitInsideHorizontally: true,
             tooltipRoundedRadius: 10,
-            tooltipPadding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 8),
+            tooltipPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
               final i = s.x.toInt();
               final bucket =
@@ -226,7 +224,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ? DateFormat('MMM dd HH:mm').format(bucket.start)
                   : '';
               return LineTooltipItem(
-                '${s.y.toStringAsFixed(1)}${_unit.isNotEmpty ? _unit : ''}\n$timeLabel',
+                '${s.y.toStringAsFixed(1)}${unit.isNotEmpty ? unit : ''}\n$timeLabel',
                 TextStyle(
                   color: color,
                   fontWeight: FontWeight.bold,
@@ -240,15 +238,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _buildMiniStat(
-      String label, String value, String unit, Color color) {
+  Widget _buildMiniStat(String label, String value, String unit, Color color,
+      AppTokens tokens) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tokens.bgSurface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade100),
+          border: Border.all(color: tokens.borderSoft),
         ),
         child: Column(
           children: [
@@ -259,32 +257,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
             const SizedBox(height: 2),
             Text(label,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted)),
           ],
         ),
       ),
     );
   }
 
-  String _formatValue(SensorReading r) {
+  String _formatValue(SensorReading r, String unit) {
     if (r.unit == 'status') {
       if (r.sensorType == 'water') {
         return r.value > 0 ? 'Moist' : 'Dry';
       }
       return r.value > 0 ? 'Detected' : 'Clear';
     }
-    return '${r.value.toStringAsFixed(1)}${_unit.isNotEmpty ? _unit : ' ${r.unit}'}';
+    return '${r.value.toStringAsFixed(1)}${unit.isNotEmpty ? unit : ' ${r.unit}'}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final supabaseData = context.watch<SupabaseDataProvider>();
     final allForType = supabaseData.readingsForType(_selectedMetric);
     final filtered = _filterByRange(allForType);
     final buckets = _bucketize(filtered);
+    final metric = _currentMetric(tokens);
+    final color = metric['color'] as Color;
+    final unit = metric['unit'] as String;
+    final metrics = _metrics(tokens);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: tokens.bgVoid,
       body: SafeArea(
         child: supabaseData.loading && supabaseData.sensorReadings.isEmpty
             ? const Center(child: CircularProgressIndicator())
@@ -295,10 +298,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.cloud_off,
-                            size: 56, color: Colors.grey.shade300),
+                            size: 56, color: tokens.textWhisper),
                         const SizedBox(height: 12),
                         Text(supabaseData.error!,
-                            style: TextStyle(color: Colors.grey.shade500)),
+                            style: TextStyle(color: tokens.textMuted)),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           onPressed: () =>
@@ -306,7 +309,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           icon: const Icon(Icons.refresh, size: 18),
                           label: const Text('Retry'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5C61B2),
+                            backgroundColor: tokens.emberCore,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -325,12 +328,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Analytics',
                                   style: TextStyle(
                                     fontSize: 28,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1a1a2e),
+                                    color: tokens.textPrimary,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -338,20 +341,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   'Historical sensor data',
                                   style: TextStyle(
                                       fontSize: 14,
-                                      color: Colors.grey.shade500),
+                                      color: tokens.textMuted),
                                 ),
                               ],
                             ),
                           ),
                         ),
-
-                        // Metric selector
                         SliverToBoxAdapter(
                           child: Padding(
                             padding:
                                 const EdgeInsets.fromLTRB(20, 20, 20, 0),
                             child: Row(
-                              children: _kMetrics.map((m) {
+                              children: metrics.map((m) {
                                 final isSelected =
                                     m['key'] == _selectedMetric;
                                 final col = m['color'] as Color;
@@ -372,15 +373,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                         decoration: BoxDecoration(
                                           color: isSelected
                                               ? col.withValues(alpha: 0.12)
-                                              : Colors.white,
+                                              : tokens.bgSurface,
                                           borderRadius:
                                               BorderRadius.circular(14),
                                           border: Border.all(
                                             color: isSelected
                                                 ? col
-                                                : Colors.grey.shade200,
-                                            width:
-                                                isSelected ? 1.5 : 1,
+                                                : tokens.borderSoft,
+                                            width: isSelected ? 1.5 : 1,
                                           ),
                                         ),
                                         child: Column(
@@ -389,7 +389,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                               m['icon'] as IconData,
                                               color: isSelected
                                                   ? col
-                                                  : Colors.grey.shade400,
+                                                  : tokens.textMuted,
                                               size: 20,
                                             ),
                                             const SizedBox(height: 4),
@@ -404,8 +404,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                     : FontWeight.w500,
                                                 color: isSelected
                                                     ? col
-                                                    : Colors.grey
-                                                        .shade500,
+                                                    : tokens.textSecondary,
                                               ),
                                             ),
                                           ],
@@ -418,8 +417,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             ),
                           ),
                         ),
-
-                        // Time range selector
                         SliverToBoxAdapter(
                           child: Padding(
                             padding:
@@ -443,14 +440,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                               vertical: 10),
                                       decoration: BoxDecoration(
                                         color: selected
-                                            ? const Color(0xFF5C61B2)
-                                            : Colors.white,
+                                            ? tokens.emberCore
+                                            : tokens.bgSurface,
                                         borderRadius:
                                             BorderRadius.circular(10),
                                         border: Border.all(
                                           color: selected
-                                              ? const Color(0xFF5C61B2)
-                                              : Colors.grey.shade200,
+                                              ? tokens.emberCore
+                                              : tokens.borderSoft,
                                         ),
                                       ),
                                       child: Text(
@@ -459,7 +456,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                           fontWeight: FontWeight.w600,
                                           color: selected
                                               ? Colors.white
-                                              : Colors.grey.shade600,
+                                              : tokens.textSecondary,
                                         ),
                                       ),
                                     ),
@@ -469,8 +466,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             ),
                           ),
                         ),
-
-                        // Stat cards
                         SliverToBoxAdapter(
                           child: Padding(
                             padding:
@@ -479,36 +474,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               children: [
                                 _buildMiniStat(
                                     'Min',
-                                    _minVal(filtered)
-                                        .toStringAsFixed(1),
-                                    _unit,
-                                    _color),
+                                    _minVal(filtered).toStringAsFixed(1),
+                                    unit,
+                                    color,
+                                    tokens),
                                 const SizedBox(width: 10),
                                 _buildMiniStat(
                                     'Max',
-                                    _maxVal(filtered)
-                                        .toStringAsFixed(1),
-                                    _unit,
-                                    _color),
+                                    _maxVal(filtered).toStringAsFixed(1),
+                                    unit,
+                                    color,
+                                    tokens),
                                 const SizedBox(width: 10),
                                 _buildMiniStat(
                                     'Avg',
-                                    _avgVal(filtered)
-                                        .toStringAsFixed(1),
-                                    _unit,
-                                    _color),
+                                    _avgVal(filtered).toStringAsFixed(1),
+                                    unit,
+                                    color,
+                                    tokens),
                                 const SizedBox(width: 10),
                                 _buildMiniStat(
                                     'Count',
                                     '${filtered.length}',
                                     '',
-                                    Colors.grey.shade600),
+                                    tokens.textSecondary,
+                                    tokens),
                               ],
                             ),
                           ),
                         ),
-
-                        // Chart
                         SliverToBoxAdapter(
                           child: Padding(
                             padding:
@@ -518,22 +512,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               padding: const EdgeInsets.fromLTRB(
                                   8, 36, 16, 8),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: tokens.bgSurface,
                                 borderRadius: BorderRadius.circular(20),
+                                border:
+                                    Border.all(color: tokens.borderSoft),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: _color.withValues(alpha: 0.06),
+                                    color: color.withValues(alpha: 0.06),
                                     blurRadius: 12,
                                     offset: const Offset(0, 4),
                                   ),
                                 ],
                               ),
-                              child: _buildChart(buckets, _color),
+                              child: _buildChart(
+                                  buckets, color, unit, tokens),
                             ),
                           ),
                         ),
-
-                        // Recent readings list
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(
@@ -543,12 +538,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade800,
+                                color: tokens.textPrimary,
                               ),
                             ),
                           ),
                         ),
-
                         if (filtered.isNotEmpty)
                           SliverPadding(
                             padding: const EdgeInsets.symmetric(
@@ -567,35 +561,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 14, vertical: 12),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: tokens.bgSurface,
                                       borderRadius:
                                           BorderRadius.circular(10),
+                                      border: Border.all(
+                                          color: tokens.borderSoft),
                                     ),
                                     child: Row(
                                       children: [
                                         Icon(Icons.circle,
-                                            size: 8, color: _color),
+                                            size: 8, color: color),
                                         const SizedBox(width: 10),
                                         Expanded(
                                           child: Text(
                                             DateFormat('MMM dd, HH:mm')
-                                                .format(
-                                                    entry.recordedAt),
+                                                .format(entry.recordedAt),
                                             style: TextStyle(
                                               fontSize: 13,
-                                              color:
-                                                  Colors.grey.shade600,
+                                              color: tokens.textSecondary,
                                             ),
                                           ),
                                         ),
                                         Text(
-                                          _formatValue(entry),
+                                          _formatValue(entry, unit),
                                           style: TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.bold,
                                             color: entry.isAlert
-                                                ? const Color(0xFFFF4757)
-                                                : _color,
+                                                ? tokens.crimsonCore
+                                                : color,
                                           ),
                                         ),
                                       ],
@@ -608,7 +602,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               ),
                             ),
                           ),
-
                         if (filtered.isEmpty)
                           SliverToBoxAdapter(
                             child: Padding(
@@ -618,11 +611,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 'No readings in this period',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                    color: Colors.grey.shade400),
+                                    color: tokens.textWhisper),
                               ),
                             ),
                           ),
-
                         const SliverToBoxAdapter(
                             child: SizedBox(height: 24)),
                       ],
