@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Camera, Radio, Shield, ShieldOff, CheckCircle, XCircle, User, WifiOff } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { Camera, Radio, Shield, ShieldOff, CheckCircle, XCircle, User, WifiOff, Loader } from 'lucide-react';
 import { useRealtime } from '../context/RealtimeContext';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { formatDistanceToNow } from 'date-fns';
@@ -34,12 +34,30 @@ const CameraPage = () => {
         fetchEvents();
     }, []);
 
+    const refetchEvent = useCallback(async (eventId) => {
+        try {
+            const { data } = await supabase
+                .from('camera_events')
+                .select('*, events(*), event_faces(*, residents(name, label))')
+                .eq('id', eventId)
+                .single();
+            if (data) {
+                setEvents(prev => prev.map(ev => ev.id === eventId ? data : ev));
+            }
+        } catch (err) { console.error('Refetch event failed:', err); }
+    }, []);
+
     useEffect(() => {
         const unsub = subscribe('camera_event', (row) => {
-            setEvents(prev => [row, ...prev].slice(0, 20));
+            const hasfaces = row.event_faces && row.event_faces.length > 0;
+            const newEvent = { ...row, _scanning: !hasfaces };
+            setEvents(prev => [newEvent, ...prev].slice(0, 20));
+            if (!hasfaces && row.id) {
+                setTimeout(() => refetchEvent(row.id), 1500);
+            }
         });
         return unsub;
-    }, [subscribe]);
+    }, [subscribe, refetchEvent]);
 
     useEffect(() => () => {
         if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -122,8 +140,17 @@ const CameraPage = () => {
                         ) : (
                             events.map((ev, i) => {
                                 const face = ev.event_faces?.[0];
+                                const isScanning = ev._scanning && !face;
                                 const isKnown = face?.classification === 'resident';
-                                const personName = face?.residents?.name || (isKnown ? 'Authorized Person' : 'Unknown Person');
+                                const personName = isScanning
+                                    ? 'Scanning...'
+                                    : face?.residents?.name || (isKnown ? 'Authorized Person' : 'Unknown Person');
+                                const rowColor = isScanning
+                                    ? 'var(--amber-core, #f59e0b)'
+                                    : isKnown ? 'var(--jade-core)' : 'var(--crimson-core)';
+                                const rowBg = isScanning
+                                    ? 'rgba(245,158,11,0.1)'
+                                    : isKnown ? 'rgba(0,229,160,0.1)' : 'rgba(255,59,92,0.1)';
                                 return (
                                     <div
                                         key={ev.id || i}
@@ -132,18 +159,18 @@ const CameraPage = () => {
                                         onMouseLeave={handleRowLeave}
                                         style={{ display: 'flex', alignItems: 'center', gap: 'var(--s3)', padding: 'var(--s3) var(--s5)', borderBottom: '1px solid var(--border-dim)', cursor: 'pointer' }}
                                     >
-                                        <div style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', background: isKnown ? 'rgba(0,229,160,0.1)' : 'rgba(255,59,92,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isKnown ? 'var(--jade-core)' : 'var(--crimson-core)', flexShrink: 0 }}>
-                                            {isKnown ? <Shield size={16} /> : <ShieldOff size={16} />}
+                                        <div style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', background: rowBg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: rowColor, flexShrink: 0 }}>
+                                            {isScanning ? <Loader size={16} className="spin-icon" /> : isKnown ? <Shield size={16} /> : <ShieldOff size={16} />}
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: isKnown ? 'var(--jade-core)' : 'var(--crimson-core)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {isKnown ? personName : 'Unknown Person'}
+                                            <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: rowColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {personName}
                                             </div>
                                             <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>
                                                 {ev.created_at ? formatDistanceToNow(new Date(ev.created_at), { addSuffix: true }) : 'Just now'}
                                             </div>
                                         </div>
-                                        {isKnown ? <CheckCircle size={14} style={{ color: 'var(--jade-core)', flexShrink: 0 }} /> : <XCircle size={14} style={{ color: 'var(--crimson-core)', flexShrink: 0 }} />}
+                                        {isScanning ? <Loader size={14} className="spin-icon" style={{ color: rowColor, flexShrink: 0 }} /> : isKnown ? <CheckCircle size={14} style={{ color: 'var(--jade-core)', flexShrink: 0 }} /> : <XCircle size={14} style={{ color: 'var(--crimson-core)', flexShrink: 0 }} />}
                                     </div>
                                 );
                             })
@@ -163,6 +190,8 @@ const CameraPage = () => {
             <style>{`
                 .detection-row { transition: background var(--t-fast) var(--ease-out); }
                 .detection-row:hover { background: var(--border-dim); }
+                .spin-icon { animation: spin 1.2s linear infinite; }
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             `}</style>
         </div>
     );

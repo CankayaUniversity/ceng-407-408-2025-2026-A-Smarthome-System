@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Radio, WifiOff, Camera, Video, VideoOff } from 'lucide-react';
+import { Radio, WifiOff, Video, VideoOff } from 'lucide-react';
 
 const DEFAULT_RELAY_URL =
   import.meta.env.VITE_RELAY_WS_URL || 'ws://92.5.17.205:8080';
@@ -7,10 +7,9 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS  = 16000;
 
 const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
-  const [isLive, setIsLive]       = useState(false);
+  const [isLive, setIsLive]         = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [fps, setFps]             = useState(0);
-  const [snapshotSrc, setSnapshotSrc] = useState(null);
+  const [fps, setFps]               = useState(0);
 
   const wsRef             = useRef(null);
   const imgRef            = useRef(null);
@@ -19,7 +18,6 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
   const delayRef          = useRef(RECONNECT_BASE_MS);
   const frameCountRef     = useRef(0);
   const manuallyClosedRef = useRef(false);
-  const lastFrameRef      = useRef(null);
 
   // ── Internal: tear down the WebSocket cleanly ──────────────
   function teardown() {
@@ -42,7 +40,6 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
 
   // ── Internal: open the WebSocket ───────────────────────────
   function connect() {
-    // Prevent duplicate sockets
     const existing = wsRef.current;
     if (
       existing &&
@@ -90,7 +87,6 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
         if (imgRef.current) {
           imgRef.current.src = src;
         }
-        lastFrameRef.current = src;
         frameCountRef.current++;
       } catch (err) {
         console.warn('[LiveCameraFeed] Frame decode error:', err);
@@ -111,7 +107,6 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
       setIsLive(false);
       setConnecting(false);
 
-      // Only auto-reconnect if not manually stopped
       if (!manuallyClosedRef.current) {
         const delay = delayRef.current;
         delayRef.current = Math.min(delay * 2, RECONNECT_MAX_MS);
@@ -131,65 +126,19 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
       teardown();
     } else {
       manuallyClosedRef.current = false;
-      setSnapshotSrc(null);
       connect();
     }
-  };
-
-  // ── Snapshot ───────────────────────────────────────────────
-  const handleSnapshot = () => {
-    if (isLive && lastFrameRef.current) {
-      setSnapshotSrc(lastFrameRef.current);
-      return;
-    }
-    // If not live, open a temporary connection for one frame
-    manuallyClosedRef.current = false;
-    setConnecting(true);
-    const ws = new WebSocket(url);
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ role: 'viewer' }));
-    };
-    ws.onmessage = async (event) => {
-      try {
-        let payload;
-        if (event.data instanceof Blob) {
-          payload = await event.data.text();
-        } else {
-          payload = String(event.data);
-        }
-        if (!payload || payload === '[object Blob]') return;
-        const src = payload.startsWith('data:image')
-          ? payload
-          : `data:image/jpeg;base64,${payload}`;
-        setSnapshotSrc(src);
-      } catch {}
-      setConnecting(false);
-      try { ws.close(); } catch {}
-    };
-    ws.onerror = () => { setConnecting(false); };
-    ws.onclose = () => { setConnecting(false); };
   };
 
   // ── Render ─────────────────────────────────────────────────
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--bg-base, #0a0c10)', overflow: 'hidden' }}>
-      {/* Live image (hidden when not streaming) */}
       <img
         ref={imgRef}
         alt="Live camera feed"
         style={{ width: '100%', height: '100%', objectFit: 'cover', display: isLive ? 'block' : 'none' }}
       />
 
-      {/* Snapshot image (shown when live is off and snapshot exists) */}
-      {!isLive && snapshotSrc && (
-        <img
-          src={snapshotSrc}
-          alt="Camera snapshot"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      )}
-
-      {/* Live overlay badges */}
       {isLive && (
         <>
           <div style={{ position: 'absolute', top: 12, left: 12, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,59,92,0.5)', borderRadius: 999, backdropFilter: 'blur(6px)', color: '#ff3b5c', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', zIndex: 2 }}>
@@ -202,8 +151,7 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
         </>
       )}
 
-      {/* Idle / connecting state */}
-      {!isLive && !snapshotSrc && (
+      {!isLive && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, gap: 12 }}>
           <div style={{ width: 64, height: 64, background: 'rgba(255,59,92,0.08)', border: '1px solid rgba(255,59,92,0.2)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--crimson-core, #ff3b5c)' }}>
             {connecting ? <Radio size={28} className="spin-icon" /> : <WifiOff size={28} />}
@@ -219,8 +167,7 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
         </div>
       )}
 
-      {/* Control buttons */}
-      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 10, zIndex: 3 }}>
+      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 3 }}>
         <button
           onClick={handleToggleLive}
           style={{
@@ -234,21 +181,6 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
         >
           {isLive ? <VideoOff size={14} /> : <Video size={14} />}
           {isLive ? 'STOP' : connecting ? 'CONNECTING...' : 'LIVE'}
-        </button>
-        <button
-          onClick={handleSnapshot}
-          disabled={connecting}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '8px 18px',
-            background: 'rgba(59,130,246,0.9)',
-            color: 'white', border: 'none', borderRadius: 999,
-            fontSize: 12, fontWeight: 700, cursor: connecting ? 'not-allowed' : 'pointer',
-            opacity: connecting ? 0.5 : 1,
-            backdropFilter: 'blur(6px)',
-          }}
-        >
-          <Camera size={14} /> SNAPSHOT
         </button>
       </div>
 

@@ -6,8 +6,8 @@ Thread-safety:
   - _frame_lock protects the shared _latest_bgr frame buffer.
 
 Color format:
-  Picamera2 is configured with BGR888 so frames are in OpenCV-native BGR
-  order directly — no cvtColor conversion needed.
+  Picamera2 captures in RGB888 (universally supported). Each capture method
+  converts RGB→BGR exactly once for OpenCV compatibility.
 """
 
 import logging
@@ -29,7 +29,7 @@ class CameraCapture:
         CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
         self.picam2 = Picamera2()
         config = self.picam2.create_preview_configuration(
-            main={"size": (IMAGE_WIDTH, IMAGE_HEIGHT), "format": "BGR888"}
+            main={"size": (IMAGE_WIDTH, IMAGE_HEIGHT), "format": "RGB888"}
         )
         self.picam2.configure(config)
         self.picam2.start()
@@ -57,12 +57,14 @@ class CameraCapture:
     def capture_array(self):
         """Return the current frame as a numpy array (BGR)."""
         with self._camera_lock:
-            return self.picam2.capture_array()
+            rgb = self.picam2.capture_array()
+        return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
     def capture_array_bgr(self):
         """Return the current frame as a BGR numpy array (for OpenCV)."""
         with self._camera_lock:
-            bgr = self.picam2.capture_array()
+            rgb = self.picam2.capture_array()
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         self._update_latest(bgr)
         return bgr
 
@@ -70,7 +72,8 @@ class CameraCapture:
         """Capture a fresh BGR frame for relay streaming (thread-safe)."""
         try:
             with self._camera_lock:
-                bgr = self.picam2.capture_array()
+                rgb = self.picam2.capture_array()
+            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             self._update_latest(bgr)
             return bgr
         except Exception as exc:

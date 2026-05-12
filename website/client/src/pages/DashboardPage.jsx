@@ -193,7 +193,20 @@ const DashboardPage = () => {
             setAlerts(prev => [row, ...prev].slice(0, 3));
         });
         const unsub3 = subscribe('camera_event', (row) => {
-            setLastCameraEvent(row);
+            const hasfaces = row.event_faces && row.event_faces.length > 0;
+            setLastCameraEvent({ ...row, _scanning: !hasfaces });
+            if (!hasfaces && row.id) {
+                setTimeout(async () => {
+                    try {
+                        const { data } = await supabase
+                            .from('camera_events')
+                            .select('*, event_faces(*, residents(name, id))')
+                            .eq('id', row.id)
+                            .single();
+                        if (data) setLastCameraEvent(data);
+                    } catch {}
+                }, 1500);
+            }
         });
         return () => { unsub1(); unsub2(); unsub3(); };
     }, [subscribe]);
@@ -218,6 +231,7 @@ const DashboardPage = () => {
         : null;
 
     const lastFace = lastCameraEvent?.event_faces?.[0];
+    const lastScanning = lastCameraEvent?._scanning && !lastFace;
     const lastResult = lastFace?.classification || 'unknown';
     const lastResidentName = lastFace?.residents?.name;
 
@@ -261,8 +275,8 @@ const DashboardPage = () => {
                         {lastCameraEvent && (
                             <div style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: 'var(--r-md)', textAlign: 'center', flexShrink: 0 }}>
                                 <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginBottom: 2, letterSpacing: '0.06em' }}>Last Event</div>
-                                <div style={{ color: lastResult === 'resident' ? '#00e5a0' : '#ff3b5c', fontWeight: 700, fontSize: 'var(--size-xs)' }}>
-                                    {lastResult === 'resident' ? (lastResidentName || 'Resident') : 'Unknown Person'}
+                                <div style={{ color: lastScanning ? '#f59e0b' : lastResult === 'resident' ? '#00e5a0' : '#ff3b5c', fontWeight: 700, fontSize: 'var(--size-xs)' }}>
+                                    {lastScanning ? 'Scanning...' : lastResult === 'resident' ? (lastResidentName || 'Resident') : 'Unknown Person'}
                                 </div>
                             </div>
                         )}

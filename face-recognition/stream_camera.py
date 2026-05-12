@@ -140,19 +140,20 @@ class Picamera2Backend:
     def __init__(self, width: int, height: int):
         self._picam = Picamera2()
         config = self._picam.create_preview_configuration(
-            main={"size": (width, height), "format": "BGR888"}
+            main={"size": (width, height), "format": "RGB888"}
         )
         self._picam.configure(config)
         self._picam.start()
         # Allow auto-exposure to settle
         time.sleep(0.5)
         actual = self._picam.camera_configuration()["main"]["size"]
-        log.info("Picamera2 started (BGR888) — resolution: %dx%d", actual[0], actual[1])
+        log.info("Picamera2 started (RGB888) — resolution: %dx%d", actual[0], actual[1])
 
     def read(self):
         """Return (success, bgr_frame)."""
         try:
-            bgr_frame = self._picam.capture_array()
+            rgb_frame = self._picam.capture_array()
+            bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
             return True, bgr_frame
         except Exception as exc:
             log.warning("Picamera2 capture failed: %s", exc)
