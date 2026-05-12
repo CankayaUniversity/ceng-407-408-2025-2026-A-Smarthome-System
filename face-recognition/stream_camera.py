@@ -71,6 +71,19 @@ DEFAULT_FPS = 20
 DEFAULT_JPEG_QUALITY = 60  # 0-100  lower = smaller payload
 MAX_RECONNECT_DELAY = 30   # seconds
 STREAM_ON_DEMAND = os.getenv("STREAM_ON_DEMAND", "true").lower() in ("1", "true", "yes")
+CAMERA_COLOR_MODE = os.getenv("CAMERA_COLOR_MODE", "rgb_to_bgr").lower().strip()
+
+
+def normalize_frame(frame):
+    """Convert raw Picamera2 frame to OpenCV BGR using CAMERA_COLOR_MODE."""
+    if CAMERA_COLOR_MODE == "no_convert":
+        return frame
+    if CAMERA_COLOR_MODE == "rgb_to_bgr":
+        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    if CAMERA_COLOR_MODE == "bgr_to_rgb":
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    log.warning("Unknown CAMERA_COLOR_MODE='%s', using rgb_to_bgr", CAMERA_COLOR_MODE)
+    return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
 # ── Graceful shutdown flag ────────────────────────────────────────
 
@@ -144,16 +157,17 @@ class Picamera2Backend:
         )
         self._picam.configure(config)
         self._picam.start()
-        # Allow auto-exposure to settle
-        time.sleep(0.5)
+        # Allow AWB / AE to stabilize
+        time.sleep(1.0)
         actual = self._picam.camera_configuration()["main"]["size"]
-        log.info("Picamera2 started (RGB888) — resolution: %dx%d", actual[0], actual[1])
+        log.info("Picamera2 started (RGB888, color_mode=%s) — resolution: %dx%d",
+                 CAMERA_COLOR_MODE, actual[0], actual[1])
 
     def read(self):
         """Return (success, bgr_frame)."""
         try:
-            rgb_frame = self._picam.capture_array()
-            bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+            raw_frame = self._picam.capture_array()
+            bgr_frame = normalize_frame(raw_frame)
             return True, bgr_frame
         except Exception as exc:
             log.warning("Picamera2 capture failed: %s", exc)

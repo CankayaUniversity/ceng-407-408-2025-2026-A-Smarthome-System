@@ -6,8 +6,8 @@ Thread-safety:
   - _frame_lock protects the shared _latest_bgr frame buffer.
 
 Color format:
-  Picamera2 captures in RGB888 (universally supported). Each capture method
-  converts RGB→BGR exactly once for OpenCV compatibility.
+  Conversion is controlled by CAMERA_COLOR_MODE env var (see color_utils.py).
+  Default: rgb_to_bgr (Picamera2 RGB888 → OpenCV BGR).
 """
 
 import logging
@@ -20,6 +20,7 @@ import numpy as np
 from picamera2 import Picamera2
 
 from app.config import CAPTURE_DIR, IMAGE_WIDTH, IMAGE_HEIGHT
+from app.camera.color_utils import normalize_frame
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ class CameraCapture:
         )
         self.picam2.configure(config)
         self.picam2.start()
+        # Allow AWB / AE to stabilize
+        time.sleep(1.0)
 
         # Thread-safety locks
         self._camera_lock = threading.Lock()  # protects picam2 hardware calls
@@ -57,14 +60,14 @@ class CameraCapture:
     def capture_array(self):
         """Return the current frame as a numpy array (BGR)."""
         with self._camera_lock:
-            rgb = self.picam2.capture_array()
-        return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            raw = self.picam2.capture_array()
+        return normalize_frame(raw)
 
     def capture_array_bgr(self):
         """Return the current frame as a BGR numpy array (for OpenCV)."""
         with self._camera_lock:
-            rgb = self.picam2.capture_array()
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            raw = self.picam2.capture_array()
+        bgr = normalize_frame(raw)
         self._update_latest(bgr)
         return bgr
 
@@ -72,8 +75,8 @@ class CameraCapture:
         """Capture a fresh BGR frame for relay streaming (thread-safe)."""
         try:
             with self._camera_lock:
-                rgb = self.picam2.capture_array()
-            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                raw = self.picam2.capture_array()
+            bgr = normalize_frame(raw)
             self._update_latest(bgr)
             return bgr
         except Exception as exc:
