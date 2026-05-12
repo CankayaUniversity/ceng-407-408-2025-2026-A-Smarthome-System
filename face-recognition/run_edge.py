@@ -6,6 +6,8 @@ Orchestrates sensor reading, camera capture, face recognition,
 and communication with the FastAPI gateway (main.py → Supabase).
 """
 
+import base64
+import json
 import sys
 import os
 import time
@@ -21,6 +23,11 @@ import cv2
 import board
 import adafruit_dht
 from gpiozero import DigitalInputDevice
+
+try:
+    import websocket  # websocket-client
+except ImportError:
+    websocket = None
 
 from app.config import (
     PIR_GPIO_PIN,
@@ -51,6 +58,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("edge")
+
+# ── Live relay configuration ─────────────────────────────────
+RELAY_URL = os.environ.get("RELAY_URL", "ws://92.5.17.205:8080")
+RELAY_FPS = int(os.environ.get("RELAY_FPS", "15"))
+RELAY_JPEG_QUALITY = int(os.environ.get("RELAY_JPEG_QUALITY", "60"))
+RELAY_ENABLED = os.environ.get("RELAY_ENABLED", "true").lower() in ("1", "true", "yes")
+MAX_RELAY_RECONNECT_DELAY = 30
 
 # ── Hardware init ──────────────────────────────────────────────
 pir_sensor = DigitalInputDevice(PIR_GPIO_PIN, pull_up=False)
@@ -175,6 +189,57 @@ def heartbeat_loop():
     while True:
         send_heartbeat()
         time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+
+
+# ── Live relay streamer thread ────────────────────────────────
+
+def relay_streamer_thread(camera):
+    """Background thread: stream live frames to the WebSocket relay."""
+    if websocket is None:
+        logger.error("[Relay] websocket-client not installed — relay disabled")
+        return
+
+    reconnect_delay = 1
+    frame_interval = 1.0 / RELAY_FPS
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, RELAY_JPEG_QUALITY]
+
+    while True:
+        ws = None
+        try:
+            logger.info("[Relay] Connecting to %s …", RELAY_URL)
+            ws = websocket.create_connection(RELAY_URL, timeout=10)
+            ws.send(json.dumps({"role": "streamer"}))
+            logger.info("[Relay] Registered as streamer — streaming at %d FPS", RELAY_FPS)
+            reconnect_delay = 1
+
+            while True:
+                loop_start = time.time()
+                frame = camera.grab_relay_frame()
+                if frame is None:
+                    time.sleep(0.1)
+                    continue
+
+                ok, buf = cv2.imencode(".jpg", frame, encode_params)
+                if ok:
+                    ws.send(base64.b64encode(buf).decode("ascii"))
+
+                elapsed = time.time() - loop_start
+                sleep_time = frame_interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+        except Exception as exc:
+            logger.warning("[Relay] Connection lost: %s", exc)
+        finally:
+            if ws:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+
+        logger.info("[Relay] Reconnecting in %d s …", reconnect_delay)
+        time.sleep(reconnect_delay)
+        reconnect_delay = min(reconnect_delay * 2, MAX_RELAY_RECONNECT_DELAY)
 
 
 # ── Face recognition pipeline ─────────────────────────────────
@@ -335,6 +400,16 @@ def main():
     except Exception as e:
         logger.error("Camera init failed: %s", e)
         return
+
+    if RELAY_ENABLED:
+        threading.Thread(
+            target=relay_streamer_thread,
+            args=(camera,),
+            daemon=True,
+        ).start()
+        logger.info("Live relay streaming enabled → %s", RELAY_URL)
+    else:
+        logger.info("Live relay streaming disabled (RELAY_ENABLED=false)")
 
     window_open = False
     PREVIEW_FPS = 10
