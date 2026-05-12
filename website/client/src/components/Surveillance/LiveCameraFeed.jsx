@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Radio, WifiOff, RefreshCw } from 'lucide-react';
 
 const DEFAULT_RELAY_URL =
@@ -13,98 +13,143 @@ const Status = Object.freeze({
   CLOSED:     'closed',
 });
 
-const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL, autoConnect = true }) => {
-  const [status, setStatus] = useState(Status.CLOSED);
-  const [fps, setFps]       = useState(0);
+const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL }) => {
+  const [status, setStatus]         = useState(Status.CLOSED);
+  const [fps, setFps]               = useState(0);
+  const [retryCounter, setRetryCounter] = useState(0);
 
-  const wsRef        = useRef(null);
-  const imgRef       = useRef(null);
-  const reconnectRef = useRef(null);
-  const delayRef     = useRef(RECONNECT_BASE_MS);
-  const mountedRef   = useRef(true);
-  const frameCountRef = useRef(0);
-  const fpsTimerRef   = useRef(null);
+  const wsRef              = useRef(null);
+  const imgRef             = useRef(null);
+  const reconnectTimerRef  = useRef(null);
+  const fpsTimerRef        = useRef(null);
+  const delayRef           = useRef(RECONNECT_BASE_MS);
+  const frameCountRef      = useRef(0);
+  const manuallyClosedRef  = useRef(false);
 
-  const connect = useCallback(() => {
-    if (!mountedRef.current) return;
-    if (wsRef.current) { try { wsRef.current.close(); } catch {} }
+  // ── Single effect owns the entire WebSocket lifecycle ───────
+  useEffect(() => {
+    manuallyClosedRef.current = false;
 
-    setStatus(Status.CONNECTING);
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    function cleanup() {
+      manuallyClosedRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (fpsTimerRef.current) {
+        clearInterval(fpsTimerRef.current);
+        fpsTimerRef.current = null;
+      }
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+    }
 
-    ws.onopen = () => {
-      if (!mountedRef.current) return;
-      console.debug('[LiveCameraFeed] WebSocket open');
-      ws.send(JSON.stringify({ role: 'viewer' }));
-      setStatus(Status.CONNECTED);
-      delayRef.current = RECONNECT_BASE_MS;
-      frameCountRef.current = 0;
-      fpsTimerRef.current = setInterval(() => {
-        if (mountedRef.current) {
+    function connect() {
+      // Guard: don't open a second socket
+      const existing = wsRef.current;
+      if (
+        existing &&
+        (existing.readyState === WebSocket.OPEN ||
+         existing.readyState === WebSocket.CONNECTING)
+      ) {
+        return;
+      }
+
+      if (manuallyClosedRef.current) return;
+
+      setStatus(Status.CONNECTING);
+
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (manuallyClosedRef.current) { ws.close(); return; }
+        console.debug('[LiveCameraFeed] WebSocket open');
+        ws.send(JSON.stringify({ role: 'viewer' }));
+        setStatus(Status.CONNECTED);
+        delayRef.current = RECONNECT_BASE_MS;
+        frameCountRef.current = 0;
+
+        if (fpsTimerRef.current) clearInterval(fpsTimerRef.current);
+        fpsTimerRef.current = setInterval(() => {
           setFps(frameCountRef.current);
           frameCountRef.current = 0;
+        }, 1000);
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          let payload;
+          if (event.data instanceof Blob) {
+            payload = await event.data.text();
+          } else {
+            payload = String(event.data);
+          }
+
+          if (!payload || payload === '[object Blob]') return;
+
+          const src = payload.startsWith('data:image')
+            ? payload
+            : `data:image/jpeg;base64,${payload}`;
+
+          if (imgRef.current) {
+            imgRef.current.src = src;
+          }
+          frameCountRef.current++;
+        } catch (err) {
+          console.warn('[LiveCameraFeed] Frame decode error:', err);
         }
-      }, 1000);
-    };
+      };
 
-    ws.onmessage = async (event) => {
-      try {
-        let payload;
-        if (event.data instanceof Blob) {
-          payload = await event.data.text();
-        } else {
-          payload = String(event.data);
+      ws.onerror = (err) => {
+        console.warn('[LiveCameraFeed] WebSocket error:', err);
+      };
+
+      ws.onclose = (e) => {
+        console.debug('[LiveCameraFeed] WebSocket closed', e.code, e.reason);
+
+        if (fpsTimerRef.current) {
+          clearInterval(fpsTimerRef.current);
+          fpsTimerRef.current = null;
+        }
+        setFps(0);
+
+        // If we closed it on purpose (unmount / new effect), stop here
+        if (manuallyClosedRef.current) {
+          setStatus(Status.CLOSED);
+          return;
         }
 
-        if (!payload || payload === '[object Blob]') return;
+        setStatus(Status.CLOSED);
 
-        const src = payload.startsWith('data:image')
-          ? payload
-          : `data:image/jpeg;base64,${payload}`;
+        // Schedule reconnect with exponential back-off
+        const delay = delayRef.current;
+        delayRef.current = Math.min(delay * 2, RECONNECT_MAX_MS);
+        reconnectTimerRef.current = setTimeout(connect, delay);
+      };
+    }
 
-        if (imgRef.current) {
-          imgRef.current.src = src;
-        }
-        frameCountRef.current++;
-      } catch (err) {
-        console.warn('[LiveCameraFeed] Frame decode error:', err);
-      }
-    };
-
-    ws.onerror = () => {
-      if (mountedRef.current) setStatus(Status.ERROR);
-    };
-
-    ws.onclose = (e) => {
-      console.debug('[LiveCameraFeed] WebSocket closed', e.code, e.reason);
-      if (!mountedRef.current) return;
-      setStatus(Status.CLOSED);
-      if (fpsTimerRef.current) clearInterval(fpsTimerRef.current);
-      setFps(0);
-      const delay = delayRef.current;
-      delayRef.current = Math.min(delay * 2, RECONNECT_MAX_MS);
-      reconnectRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
-      }, delay);
-    };
-  }, [url]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    if (autoConnect) connect();
-    return () => {
-      mountedRef.current = false;
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (fpsTimerRef.current) clearInterval(fpsTimerRef.current);
-      if (wsRef.current) { try { wsRef.current.close(); } catch {} }
-    };
-  }, [connect, autoConnect]);
-
-  const handleRetry = () => {
-    if (reconnectRef.current) clearTimeout(reconnectRef.current);
-    delayRef.current = RECONNECT_BASE_MS;
     connect();
+    return cleanup;
+  }, [url, retryCounter]);   // retryCounter lets the Retry button re-trigger
+
+  // ── Manual retry handler ───────────────────────────────────
+  const handleRetry = () => {
+    // Tear down whatever exists and let the effect reconnect fresh
+    manuallyClosedRef.current = true;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws) { try { ws.close(); } catch {} }
+
+    delayRef.current = RECONNECT_BASE_MS;
+    setRetryCounter((c) => c + 1);   // triggers the effect
   };
 
   const isLive = status === Status.CONNECTED;
