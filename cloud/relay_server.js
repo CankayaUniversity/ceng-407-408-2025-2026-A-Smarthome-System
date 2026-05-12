@@ -99,7 +99,7 @@ wss.on('connection', (ws, req) => {
 
     // ── Frame relay (streamer → viewers) ──
     if (ws.role === 'streamer') {
-      const frame = data; // keep as Buffer for efficiency
+      const frame = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
       let sent = 0;
       for (const viewer of viewers) {
         if (viewer.readyState === viewer.OPEN) {

@@ -35,6 +35,7 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL, autoConnect = true }) => {
 
     ws.onopen = () => {
       if (!mountedRef.current) return;
+      console.debug('[LiveCameraFeed] WebSocket open');
       ws.send(JSON.stringify({ role: 'viewer' }));
       setStatus(Status.CONNECTED);
       delayRef.current = RECONNECT_BASE_MS;
@@ -47,18 +48,36 @@ const LiveCameraFeed = ({ url = DEFAULT_RELAY_URL, autoConnect = true }) => {
       }, 1000);
     };
 
-    ws.onmessage = (event) => {
-      if (imgRef.current) {
-        imgRef.current.src = `data:image/jpeg;base64,${event.data}`;
+    ws.onmessage = async (event) => {
+      try {
+        let payload;
+        if (event.data instanceof Blob) {
+          payload = await event.data.text();
+        } else {
+          payload = String(event.data);
+        }
+
+        if (!payload || payload === '[object Blob]') return;
+
+        const src = payload.startsWith('data:image')
+          ? payload
+          : `data:image/jpeg;base64,${payload}`;
+
+        if (imgRef.current) {
+          imgRef.current.src = src;
+        }
+        frameCountRef.current++;
+      } catch (err) {
+        console.warn('[LiveCameraFeed] Frame decode error:', err);
       }
-      frameCountRef.current++;
     };
 
     ws.onerror = () => {
       if (mountedRef.current) setStatus(Status.ERROR);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      console.debug('[LiveCameraFeed] WebSocket closed', e.code, e.reason);
       if (!mountedRef.current) return;
       setStatus(Status.CLOSED);
       if (fpsTimerRef.current) clearInterval(fpsTimerRef.current);
