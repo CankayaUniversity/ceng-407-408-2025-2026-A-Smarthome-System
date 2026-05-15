@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/fcm_registration_service.dart';
 import '../services/supabase_auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -47,6 +48,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _loadProfile(String userId) async {
     _profile = await SupabaseAuthService.fetchProfile(userId);
+    await FcmRegistrationService.syncForCurrentUser();
   }
 
   Future<bool> login(String email, String password) async {
@@ -112,6 +114,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await FcmRegistrationService.unregisterCurrentDevice();
     await SupabaseAuthService.signOut();
     _user = null;
     _profile = null;

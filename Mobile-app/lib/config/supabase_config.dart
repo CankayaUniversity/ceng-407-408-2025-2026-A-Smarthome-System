@@ -13,6 +13,10 @@ class SupabaseConfig {
   static const String residentsTable = 'residents';
   static const String profilesTable = 'profiles';
   static const String devicesTable = 'devices';
+  static const String userDevicesTable = 'user_devices';
+
+  /// Must match [NotificationService] channel id and FCM `android.notification.channel_id`.
+  static const String fcmAndroidChannelId = 'smarthome_alerts';
 
   // Storage
   static const String snapshotBucket = 'event-snapshots';

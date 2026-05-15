@@ -1,0 +1,9 @@
+schema_version: 20180708
+name: push_alarm
+version: 0.0.1
+runtime: python
+build_image: fnproject/python:3.11-dev
+entrypoint: /python/bin/fdk /function/func.py handler
+format: default
+memory: 2048
+timeout: 120

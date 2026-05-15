@@ -1,5 +1,9 @@
 node_modules/
 
+# Cursor agent cache and local docs (may contain secrets like service_role keys)
+.cursor/
+docs/
+
 # Environment secrets
 .env
 .env.local

@@ -1,0 +1,6 @@
+OCI API Gateway (high level)
+1. Create an API in API Gateway with a deployment (e.g. /v1).
+2. Add route POST /alarm (full path e.g. /v1/alarm) with integration type Oracle Functions; pick the deployed push_alarm function and OCID.
+3. Set invocation authentication (resource principal / IAM) per OCI docs so the gateway may invoke the function.
+4. Optional: attach a Usage Plan + API key; still send X-Webhook-Secret from Supabase for an extra shared-secret layer.
+5. Copy the invoke URL into the Supabase Database Webhook URL field.

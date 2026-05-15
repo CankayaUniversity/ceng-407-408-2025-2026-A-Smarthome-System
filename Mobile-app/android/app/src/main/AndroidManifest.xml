@@ -41,6 +41,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- FCM: use same channel id as Flutter [NotificationService] / OCI payload -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="smarthome_alerts" />
+
         <!-- flutter_background_service: foreground service for persistent socket -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
