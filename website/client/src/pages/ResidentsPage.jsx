@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ModalOverlay from '../components/ModalOverlay';
 import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle, RefreshCw, Mail, KeyRound, Copy, Check, UserCheck } from 'lucide-react';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -25,7 +26,7 @@ function AvatarInitials({ name, size = 56 }) {
 /* ─── Email Sent success modal ──────────────────────────────── */
 function EmailSentModal({ name, email, onClose }) {
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <ModalOverlay onClose={onClose}>
             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
                 <div className="modal-header">
                     <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--jade-core)' }}>
@@ -60,7 +61,7 @@ function EmailSentModal({ name, email, onClose }) {
                     <button className="btn btn-primary" onClick={onClose}>Done</button>
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 
@@ -248,14 +249,13 @@ const ResidentsPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--s8)', paddingBottom: 'var(--s6)', borderBottom: '1px solid var(--border-dim)' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Residents</h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)', maxWidth: 720, lineHeight: 1.5 }}>
-                        Photos go to Supabase Storage and <code style={{ fontSize: '0.85em' }}>residents.photo_path</code> immediately.
-                        The face vector is stored in <code style={{ fontSize: '0.85em' }}>residents.embedding</code> only after the <strong>Pi FastAPI gateway</strong> downloads the image and runs face encoding (not the second terminal / edge).
-                        No admin approval — &quot;Encoding&quot; means embedding not written yet.
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', marginTop: 'var(--s2)', maxWidth: 640, lineHeight: 1.6 }}>
+                        Add household members so the front-door camera can recognize them. Upload a clear, front-facing photo for each person.
+                        Optional login accounts let residents sign in to view their own dashboard.
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--s2)', flexShrink: 0 }}>
-                    <button type="button" className="btn btn-ghost" onClick={handleRefreshList} disabled={refreshing || loading} title="Reload rows from Supabase">
+                    <button type="button" className="btn btn-ghost" onClick={handleRefreshList} disabled={refreshing || loading} title="Refresh list">
                         {refreshing ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <><RefreshCw size={16} /> Refresh</>}
                     </button>
                     {isAdmin && (
@@ -288,15 +288,15 @@ const ResidentsPage = () => {
                         let badgeContent;
                         let badgeClass;
                         if (hasEmbedding) {
-                            statusLine = 'Face vector stored — Pi can match this person.';
-                            badgeContent = (<><ShieldCheck size={10} />&nbsp;Active</>);
+                            statusLine = 'Ready for recognition at the front door.';
+                            badgeContent = (<><ShieldCheck size={10} />&nbsp;Recognized</>);
                             badgeClass = 'badge-success';
                         } else if (hasPhoto) {
-                            statusLine = 'Photo is already in Supabase. Only the uvicorn gateway (port 8000) writes residents.embedding — first scan ~3s after it starts, then on a timer. Use Refresh after the Pi log shows success, or POST /api/v1/residents/backfill-embeddings (see project README).';
-                            badgeContent = 'Encoding';
+                            statusLine = 'Photo saved. Face profile is being prepared — tap Refresh in a few seconds.';
+                            badgeContent = 'Processing';
                             badgeClass = 'badge-warning';
                         } else {
-                            statusLine = 'Add a clear, front-facing photo. Nothing is waiting on admin approval.';
+                            statusLine = 'Add a clear, front-facing photo to enable recognition.';
                             badgeContent = 'No photo';
                             badgeClass = 'badge-neutral';
                         }
@@ -360,7 +360,7 @@ const ResidentsPage = () => {
 
             {/* Add Resident Modal */}
             {showModal && (
-                <div className="modal-overlay" onClick={resetModal}>
+                <ModalOverlay onClose={resetModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>Add Resident</h2>
@@ -438,7 +438,7 @@ const ResidentsPage = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {/* Email Sent Modal */}
@@ -452,7 +452,7 @@ const ResidentsPage = () => {
 
             {/* Create Account for Existing Resident Modal */}
             {createAccountTarget && (
-                <div className="modal-overlay" onClick={() => setCreateAccountTarget(null)}>
+                <ModalOverlay onClose={() => setCreateAccountTarget(null)}>
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
                         <div className="modal-header">
                             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -461,8 +461,8 @@ const ResidentsPage = () => {
                             </h2>
                             <button className="modal-close" onClick={() => setCreateAccountTarget(null)}><X size={20} /></button>
                         </div>
-                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--s5)', lineHeight: 1.6 }}>
-                            A login account will be created for this resident. They will receive an email with a secure link to set their own password — you will never see or set their password.
+                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--s5)', lineHeight: 1.6 }}>
+                            We will email this person a secure link to choose their own password. You will not see or set their password.
                         </p>
                         {createAccountError && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{createAccountError}</div>}
                         <form
@@ -521,13 +521,13 @@ const ResidentsPage = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
 
             {/* Upload Photo Modal */}
             {captureTarget && (
-                <div className="modal-overlay" onClick={() => setCaptureTarget(null)}>
+                <ModalOverlay onClose={() => setCaptureTarget(null)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>Upload Photo — {captureTarget.name || 'Resident'}</h2>
@@ -555,7 +555,7 @@ const ResidentsPage = () => {
                             </form>
                         )}
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </div>
     );

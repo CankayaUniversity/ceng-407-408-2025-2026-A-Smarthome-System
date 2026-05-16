@@ -5,10 +5,13 @@ import { supabase } from '../services/supabase';
 import { getPublicUrl } from '../services/supabase';
 import {
     Thermometer, Droplets, Flame, Waves, Activity,
-    Eye, AlertTriangle, ShieldCheck, ShieldAlert,
+    Eye, ShieldCheck, ShieldAlert,
     Camera, Wifi, Wind,
-    DoorOpen, Sofa, UtensilsCrossed, BedDouble, Lock, ShowerHead, Flower2
+    DoorOpen, ChevronRight,
 } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { DASHBOARD_ROOM_TABS, resolveRoom, matchesRoomTab, ROOM_LABELS } from '../utils/rooms';
+import { getEventMeta, getEventToneStyle } from '../utils/eventLabels';
 
 const SENSOR_CONFIG = {
     temperature: { icon: Thermometer, color: '#ff6b35', label: 'Temperature', unit: '°C' },
@@ -21,31 +24,14 @@ const SENSOR_CONFIG = {
 };
 function getSC(type) { return SENSOR_CONFIG[type?.toLowerCase()] || { icon: Activity, color: '#8892a4', label: type, unit: '' }; }
 
-const ROOM_TABS = [
-    { id: 'all', label: 'All', icon: Activity },
-    { id: 'living', label: 'Living', icon: Sofa, keys: ['living', 'Main RPi'] },
-    { id: 'kitchen', label: 'Kitchen', icon: UtensilsCrossed, keys: ['Kitchen'] },
-    { id: 'bedroom', label: 'Bedroom', icon: BedDouble, keys: ['Bedroom'] },
-    { id: 'entrance', label: 'Entrance', icon: Lock, keys: ['Door', 'Front', 'Entrance'] },
-    { id: 'bathroom', label: 'Bathroom', icon: ShowerHead, keys: ['Bathroom'] },
-    { id: 'garden', label: 'Garden', icon: Flower2, keys: ['Garden'] },
-];
-
-function matchesRoom(sensor, tabId) {
-    if (tabId === 'all') return true;
-    const tab = ROOM_TABS.find(t => t.id === tabId);
-    if (!tab?.keys) return false;
-    const name = (sensor.deviceName || '').toLowerCase();
-    return tab.keys.some(k => name.toLowerCase().includes(k.toLowerCase()));
-}
-
 function MiniSensorCard({ sensor }) {
     const cfg = getSC(sensor.sensor_type);
     const Icon = cfg.icon;
     const val = sensor.numeric_value;
     const isBoolean = sensor.sensor_type === 'motion' || sensor.sensor_type === 'door' || sensor.sensor_type === 'water';
     const displayVal = val === null || val === undefined ? '\u2014'
-        : isBoolean ? (parseFloat(val) === 1 ? 'Active' : 'Clear')
+        : sensor.sensor_type === 'water' ? (parseFloat(val) === 1 ? 'Leak' : 'Dry')
+            : isBoolean ? (parseFloat(val) === 1 ? 'Active' : 'Clear')
             : parseFloat(val).toFixed(1);
     const isAlert = (sensor.sensor_type === 'smoke' && parseFloat(val) > 0)
         || (sensor.sensor_type === 'water' && parseFloat(val) > 0);
@@ -74,7 +60,9 @@ function MiniSensorCard({ sensor }) {
             </div>
             <div style={{ marginTop: 'auto' }}>
                 <div style={{ fontSize: 'var(--size-xs)', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cfg.label}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{sensor.sensor_type}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                    {sensor.deviceLabel || ROOM_LABELS[sensor.roomId] || 'Home'}
+                </div>
             </div>
         </div>
     );
@@ -96,11 +84,29 @@ const STAT_TILE = (alert) => ({
 });
 const STAT_LABEL = { color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 };
 
-function HazardCard({ icon: Icon, label, sensors, accent, alertText }) {
+function HazardCard({ icon: Icon, label, sensors, accent, alertText, kind = 'smoke' }) {
     const active = sensors.filter(s => parseFloat(s.numeric_value) > 0).length;
     const total = sensors.length;
     const max = sensors.reduce((m, s) => Math.max(m, parseFloat(s.numeric_value) || 0), 0);
     const isAlert = active > 0;
+
+    let statusLabel = 'Status';
+    let statusValue = 'No sensor';
+    let detailLabel = 'Monitors';
+    let detailValue = '\u2014';
+
+    if (total > 0) {
+        if (kind === 'water') {
+            statusValue = isAlert ? 'Leak detected' : 'No leak';
+            detailLabel = 'Coverage';
+            detailValue = total === 1 ? '1 zone' : `${total} zones`;
+        } else {
+            statusValue = isAlert ? 'Smoke detected' : 'Air clear';
+            detailLabel = isAlert ? 'Peak level' : 'Reading';
+            detailValue = isAlert ? max.toFixed(1) : (max > 0 ? max.toFixed(1) : 'Normal');
+        }
+    }
+
     return (
         <div className="card" style={{
             ...STAT_CARD,
@@ -113,18 +119,19 @@ function HazardCard({ icon: Icon, label, sensors, accent, alertText }) {
                 </div>
                 <h3 style={STAT_TITLE}>{label}</h3>
                 {isAlert && <span className="badge badge-danger" style={{ marginLeft: 'auto' }}>{alertText}</span>}
+                {!isAlert && total > 0 && <span className="badge badge-success" style={{ marginLeft: 'auto' }}>OK</span>}
             </div>
             <div style={STAT_GRID}>
                 <div style={STAT_TILE(isAlert)}>
-                    <div style={STAT_LABEL}>Active</div>
-                    <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: isAlert ? '#ff3b5c' : 'var(--text-primary)' }}>
-                        {active}<span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>/{total}</span>
+                    <div style={STAT_LABEL}>{statusLabel}</div>
+                    <div style={{ fontWeight: 700, fontSize: 'var(--size-sm)', color: isAlert ? '#ff3b5c' : 'var(--text-primary)', lineHeight: 1.3 }}>
+                        {statusValue}
                     </div>
                 </div>
                 <div style={STAT_TILE(false)}>
-                    <div style={STAT_LABEL}>Peak</div>
+                    <div style={STAT_LABEL}>{detailLabel}</div>
                     <div style={{ fontWeight: 700, fontSize: 'var(--size-lg)', color: isAlert ? '#ff3b5c' : accent }}>
-                        {total > 0 ? max.toFixed(1) : '\u2014'}
+                        {detailValue}
                     </div>
                 </div>
             </div>
@@ -132,10 +139,57 @@ function HazardCard({ icon: Icon, label, sensors, accent, alertText }) {
     );
 }
 
+function RecentAlertRow({ alert, onOpen }) {
+    const meta = getEventMeta(alert.event_type);
+    const tone = getEventToneStyle(meta.tone);
+    const Icon = meta.icon;
+    return (
+        <button type="button" onClick={onOpen} style={{
+            display: 'flex', alignItems: 'stretch', gap: 'var(--s3)', padding: 'var(--s3) var(--s4)',
+            background: tone.bg, borderRadius: 'var(--r-lg)', border: `1px solid ${tone.border}`,
+            cursor: 'pointer', textAlign: 'left', width: '100%',
+        }}>
+            <div style={{
+                width: 40, height: 40, borderRadius: 'var(--r-md)', flexShrink: 0,
+                background: 'var(--bg-surface)', border: `1px solid ${tone.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: tone.color,
+            }}>
+                <Icon size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--size-sm)', color: 'var(--text-primary)' }}>{meta.title}</span>
+                    <span className={`badge ${alert.priority === 'critical' ? 'badge-danger' : 'badge-warning'}`} style={{ fontSize: 10 }}>
+                        {alert.priority === 'critical' ? 'Critical' : 'Attention'}
+                    </span>
+                </div>
+                <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
+                    {alert.message || meta.short}
+                </p>
+                {alert.created_at && (
+                    <span style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 6, display: 'block' }}>
+                        {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
+                    </span>
+                )}
+            </div>
+            <ChevronRight size={18} style={{ color: 'var(--text-muted)', alignSelf: 'center', flexShrink: 0 }} />
+        </button>
+    );
+}
+
+function enrichSensors(readings, deviceMap) {
+    return readings.map(r => {
+        const device = deviceMap[r.device_id];
+        const roomId = resolveRoom(device);
+        return { ...r, roomId, deviceLabel: device?.name || ROOM_LABELS[roomId] };
+    });
+}
+
 const DashboardPage = () => {
     const navigate = useNavigate();
     const { subscribe } = useRealtime();
     const [sensors, setSensors] = useState([]);
+    const [deviceMap, setDeviceMap] = useState({});
     const [alerts, setAlerts] = useState([]);
     const [lastCameraEvent, setLastCameraEvent] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -143,18 +197,20 @@ const DashboardPage = () => {
 
     const fetchData = useCallback(async () => {
         try {
-            const { data: readings } = await supabase
-                .from('sensor_readings')
-                .select('*')
-                .order('recorded_at', { ascending: false })
-                .limit(50);
+            const [{ data: readings }, { data: devices }] = await Promise.all([
+                supabase.from('sensor_readings').select('*').order('recorded_at', { ascending: false }).limit(50),
+                supabase.from('devices').select('id, name, room'),
+            ]);
+
+            const map = Object.fromEntries((devices || []).map(d => [d.id, d]));
+            setDeviceMap(map);
 
             const latestByType = {};
             (readings || []).forEach(r => {
                 const key = `${r.device_id}_${r.sensor_type}`;
                 if (!latestByType[key]) latestByType[key] = r;
             });
-            setSensors(Object.values(latestByType));
+            setSensors(enrichSensors(Object.values(latestByType), map));
 
             const { data: evts } = await supabase
                 .from('events')
@@ -180,13 +236,14 @@ const DashboardPage = () => {
         const unsub1 = subscribe('sensor_reading', (row) => {
             setSensors(prev => {
                 const key = `${row.device_id}_${row.sensor_type}`;
+                const enriched = enrichSensors([row], deviceMap)[0];
                 const exists = prev.findIndex(s => `${s.device_id}_${s.sensor_type}` === key);
                 if (exists >= 0) {
                     const next = [...prev];
-                    next[exists] = row;
+                    next[exists] = enriched;
                     return next;
                 }
-                return [row, ...prev];
+                return [enriched, ...prev];
             });
         });
         const unsub2 = subscribe('event', (row) => {
@@ -209,7 +266,7 @@ const DashboardPage = () => {
             }
         });
         return () => { unsub1(); unsub2(); unsub3(); };
-    }, [subscribe]);
+    }, [subscribe, deviceMap]);
 
     const tempSensors = sensors.filter(s => s.sensor_type === 'temperature');
     const humSensors = sensors.filter(s => s.sensor_type === 'humidity');
@@ -220,7 +277,7 @@ const DashboardPage = () => {
     const activeMotions = sensors.filter(s => s.sensor_type === 'motion' && s.numeric_value === 1).length;
     const securityStatus = alerts.some(a => a.priority === 'critical') ? 'warning' : 'secure';
 
-    const filtered = sensors.filter(s => matchesRoom(s, activeTab));
+    const filtered = sensors.filter(s => matchesRoomTab(s.roomId, activeTab));
 
     if (loading) return (
         <div className="loading-container"><div className="spinner" /><div className="loading-text">Loading Overview</div></div>
@@ -329,6 +386,7 @@ const DashboardPage = () => {
                     sensors={smokeSensors}
                     accent="#ff3b5c"
                     alertText="ALERT"
+                    kind="smoke"
                 />
 
                 <HazardCard
@@ -337,31 +395,31 @@ const DashboardPage = () => {
                     sensors={waterSensors}
                     accent="#3b9eff"
                     alertText="LEAK"
+                    kind="water"
                 />
             </div>
 
             {alerts.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s2)' }}>
-                    <h3 style={{ fontSize: 'var(--size-xs)', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recent Alerts</h3>
+                <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s3)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <h3 style={{ fontSize: 'var(--size-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>Recent alerts</h3>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('/alerts')}>
+                            View all <ChevronRight size={14} />
+                        </button>
+                    </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s2)' }}>
                         {alerts.map(a => (
-                            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--s3)', padding: 'var(--s3)', background: a.priority === 'critical' ? 'rgba(255,59,92,0.1)' : 'rgba(255,176,32,0.1)', borderRadius: 'var(--r-md)', border: `1px solid ${a.priority === 'critical' ? 'rgba(255,59,92,0.2)' : 'rgba(255,176,32,0.2)'}` }}>
-                                <AlertTriangle size={16} style={{ color: a.priority === 'critical' ? '#ff3b5c' : '#ffb020', flexShrink: 0 }} />
-                                <div style={{ flex: 1, fontSize: 'var(--size-sm)' }}>
-                                    <strong style={{ color: a.priority === 'critical' ? '#ff3b5c' : '#ffb020', marginRight: 8, textTransform: 'capitalize' }}>{a.event_type}</strong>
-                                    {a.message}
-                                </div>
-                            </div>
+                            <RecentAlertRow key={a.id} alert={a} onOpen={() => navigate('/alerts')} />
                         ))}
                     </div>
-                </div>
+                </section>
             )}
 
             <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s3)', gap: 'var(--s4)' }}>
                     <h2 style={{ fontSize: 'var(--size-md)', fontWeight: 600 }}>Environmental Sensors</h2>
                     <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}>
-                        {ROOM_TABS.map(tab => {
+                        {DASHBOARD_ROOM_TABS.map(tab => {
                             const active = activeTab === tab.id;
                             return (
                                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -374,7 +432,13 @@ const DashboardPage = () => {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 'var(--s3)' }}>
                     {filtered.map(sensor => <MiniSensorCard key={sensor.id} sensor={sensor} />)}
-                    {filtered.length === 0 && <div style={{ gridColumn: '1/-1', padding: 'var(--s6)', textAlign: 'center', color: 'var(--text-muted)' }}>No sensors match this filter.</div>}
+                    {filtered.length === 0 && (
+                        <div style={{ gridColumn: '1/-1', padding: 'var(--s6)', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            {activeTab === 'all'
+                                ? 'No sensor readings yet.'
+                                : `No sensors in ${ROOM_LABELS[activeTab] || 'this room'}. Assign devices on the Floor Plan page.`}
+                        </div>
+                    )}
                 </div>
             </div>
 

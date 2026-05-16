@@ -48,8 +48,8 @@
 
   /* Text Layers */
   --text-primary:       #f0f4ff;
-  --text-secondary:     #8892a4;
-  --text-muted:         #4c5668;
+  --text-secondary:     #9aa3b5;
+  --text-muted:         #6d7789;
   --text-whisper:       #2d3548;
 
   /* Borders */
@@ -176,9 +176,9 @@
 
   /* Ink */
   --text-primary:   #0c121f;
-  --text-secondary: #4a5468;
-  --text-muted:     #6b7587;
-  --text-whisper:   #aab2c2;
+  --text-secondary: #3d4659;
+  --text-muted:     #525d70;
+  --text-whisper:   #8a94a6;
 
   /* Borders darken */
   --border-dim:    rgba(12, 18, 31, 0.06);
@@ -1070,12 +1070,24 @@ tr:hover td { background: var(--border-dim); }
 
 /* ─── Modal ──────────────────────────────────────────────────── */
 .modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 1000;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: rgba(8, 11, 16, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s6);
+  z-index: 2000;
   animation: fadeIn 0.2s var(--ease-out);
+}
+
+:root[data-theme="light"] .modal-overlay {
+  background: rgba(12, 18, 31, 0.55);
 }
 
 .modal {
@@ -1212,6 +1224,11 @@ tr:hover td { background: var(--border-dim); }
 
 /* ─── Animations ─────────────────────────────────────────────── */
 @keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pageEnter {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
@@ -1226,7 +1243,7 @@ tr:hover td { background: var(--border-dim); }
   to   { opacity: 1; transform: scale(1); }
 }
 
-.animate-fade-in { animation: fadeIn 0.45s var(--ease-out) forwards; }
+.animate-fade-in { animation: pageEnter 0.45s var(--ease-out) forwards; }
 .animate-slide-left { animation: slideInLeft 0.35s var(--ease-out) forwards; }
 .animate-scale-in { animation: scaleIn 0.3s var(--ease-out) forwards; }
 

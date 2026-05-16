@@ -111,8 +111,6 @@ const SettingsPage = () => {
         }
     };
 
-    const streamUrl = import.meta.env.VITE_CAMERA_STREAM_URL || '';
-
     const dirty = nameVal !== (profile?.name || '');
 
     const handleSave = async () => {
@@ -135,7 +133,7 @@ const SettingsPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--s8)', paddingBottom: 'var(--s6)', borderBottom: '1px solid var(--border-dim)' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Settings</h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)' }}>Account and appearance preferences</p>
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', marginTop: 'var(--s2)' }}>Manage your profile, household, and how the app looks</p>
                 </div>
                 <button
                     className="btn btn-primary"
@@ -148,8 +146,8 @@ const SettingsPage = () => {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s5)' }}>
-                <Section icon={Key} title="Account" desc="Your profile and credentials">
-                    <FieldRow label="Name" desc="Your display name throughout the system">
+                <Section icon={Key} title="Account" desc="Your name and sign-in details">
+                    <FieldRow label="Name" desc="Shown in the app header and on your profile">
                         <input
                             className="form-input"
                             value={nameVal}
@@ -160,7 +158,7 @@ const SettingsPage = () => {
                     <FieldRow label="Email" desc="Sign-in email address">
                         <span style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{profile?.email || user?.email}</span>
                     </FieldRow>
-                    <FieldRow label="Role" desc="Access level">
+                    <FieldRow label="Role" desc="Administrator or resident access">
                         <span className="badge badge-info" style={{ textTransform: 'uppercase' }}>{profile?.role || 'resident'}</span>
                     </FieldRow>
                 </Section>
@@ -248,10 +246,10 @@ const SettingsPage = () => {
                     </Section>
                 )}
 
-                <Section icon={Palette} title="Appearance" desc="Interface theme">
+                <Section icon={Palette} title="Appearance" desc="Light or dark interface">
                     <FieldRow
-                        label={theme === 'light' ? 'Light Mode' : 'Dark Mode'}
-                        desc="Toggle between the cinematic dark theme and a daylight-friendly light theme. Your choice persists across sessions."
+                        label={theme === 'light' ? 'Light mode' : 'Dark mode'}
+                        desc="Choose a comfortable look for day or night. Your preference is saved on this device."
                     >
                         <ThemeSwitch size="lg" showLabel />
                     </FieldRow>
@@ -259,7 +257,7 @@ const SettingsPage = () => {
 
                 {/* Admin-only: User Management */}
                 {isAdmin && (
-                    <Section icon={ShieldAlert} title="User Management" desc="Admin only — manage all system accounts">
+                    <Section icon={ShieldAlert} title="Household accounts" desc="Admin only — people who can sign in">
                         {deleteError && (
                             <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{deleteError}</div>
                         )}
@@ -313,17 +311,14 @@ const SettingsPage = () => {
                     </Section>
                 )}
 
-                <Section icon={Database} title="System Information" desc="Live infrastructure status">
+                <Section icon={Database} title="About this home" desc="Quick status for your setup">
                     {[
-                        { label: 'Platform', val: 'IoT Smart Home System v1.0' },
-                        { label: 'Database', val: 'Supabase (PostgreSQL)' },
-                        { label: 'Gateway', val: 'FastAPI + Supabase SDK' },
-                        { label: 'Frontend', val: 'React 19 + Vite' },
-                        { label: 'AI Module', val: 'Python face-recognition (Raspberry Pi)' },
-                        { label: 'Live Camera Stream', val: streamUrl || 'Not configured' },
+                        { label: 'App version', val: 'Smart Home Dashboard 1.0' },
+                        { label: 'Cloud connection', val: 'Connected' },
+                        { label: 'Face recognition', val: 'Raspberry Pi at front door' },
                     ].map(({ label, val }) => (
                         <FieldRow key={label} label={label}>
-                            <span style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', fontFamily: 'monospace', wordBreak: 'break-all', maxWidth: 360, display: 'inline-block', textAlign: 'right' }}>{val}</span>
+                            <span style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', maxWidth: 360, display: 'inline-block', textAlign: 'right' }}>{val}</span>
                         </FieldRow>
                     ))}
                 </Section>

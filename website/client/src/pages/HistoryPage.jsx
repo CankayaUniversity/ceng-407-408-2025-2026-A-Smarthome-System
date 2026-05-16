@@ -13,6 +13,21 @@ const SIC = {
 };
 function getSIC(type) { return SIC[type?.toLowerCase()] || { Icon: Activity, color: '#8892a4' }; }
 
+const SENSOR_UNITS = {
+    temperature: '°C',
+    humidity: '%',
+    smoke: '',
+    water: '',
+    motion: '',
+};
+
+const RANGE_LABELS = { '1d': 'Last 24 hours', '7d': 'Last 7 days', '30d': 'Last 30 days' };
+
+function formatSensorLabel(type) {
+    if (!type) return 'Sensor';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
@@ -84,9 +99,12 @@ const HistoryPage = () => {
     const Icon = sic.Icon;
 
     const vals = chartData.map(d => d.value);
-    const min = vals.length ? Math.min(...vals).toFixed(1) : '\u2014';
-    const max = vals.length ? Math.max(...vals).toFixed(1) : '\u2014';
-    const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '\u2014';
+    const unit = SENSOR_UNITS[selected] || '';
+    const fmt = (n) => `${n}${unit}`;
+    const min = vals.length ? fmt(Math.min(...vals).toFixed(1)) : '\u2014';
+    const max = vals.length ? fmt(Math.max(...vals).toFixed(1)) : '\u2014';
+    const avg = vals.length ? fmt((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)) : '\u2014';
+    const latest = vals.length ? fmt(vals[vals.length - 1].toFixed(1)) : '\u2014';
 
     const downloadCSV = () => {
         if (!chartData.length) return;
@@ -105,7 +123,9 @@ const HistoryPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--s2)' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Analytics</h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s1)' }}>Historical telemetry & trends</p>
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', marginTop: 'var(--s1)' }}>
+                        Trends and summaries for temperature, humidity, smoke, and water sensors
+                    </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--size-xs)', color: 'var(--text-primary)', background: 'var(--bg-surface)', border: '1px solid var(--border-soft)', borderRadius: 'var(--r-full)', padding: '6px 14px', fontWeight: 600 }}>
                     <Activity size={14} style={{ color: 'var(--violet-core)' }} />
@@ -125,7 +145,7 @@ const HistoryPage = () => {
                                 <SIcon size={16} />
                             </div>
                             <div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: isSel ? 'white' : 'var(--text-primary)', textTransform: 'capitalize' }}>{type}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: isSel ? 'var(--text-primary)' : 'var(--text-secondary)', textTransform: 'capitalize' }}>{formatSensorLabel(type)}</div>
                             </div>
                         </div>
                     );
@@ -139,7 +159,8 @@ const HistoryPage = () => {
                             <Icon size={24} />
                         </div>
                         <div>
-                            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-2xl)', fontWeight: 800, color: 'white', textTransform: 'capitalize' }}>{selected}</h2>
+                            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-2xl)', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{formatSensorLabel(selected)}</h2>
+                            <p style={{ fontSize: 'var(--size-xs)', color: 'var(--text-secondary)', marginTop: 4 }}>{RANGE_LABELS[range]} · {chartData.length} readings</p>
                         </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s3)', alignItems: 'flex-end' }}>
@@ -165,7 +186,7 @@ const HistoryPage = () => {
                         </div>
                     ) : chartData.length === 0 ? (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 'var(--s3)' }}>
-                            <Activity size={32} style={{ color: 'rgba(255,255,255,0.1)' }} />
+                            <Activity size={32} style={{ color: 'var(--border-medium)' }} />
                             <div style={{ color: 'var(--text-muted)', fontWeight: 600 }}>No telemetry for this period</div>
                         </div>
                     ) : (
@@ -177,9 +198,9 @@ const HistoryPage = () => {
                                         <stop offset="100%" stopColor={color} stopOpacity={0.0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                                <XAxis dataKey="time" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} minTickGap={20} />
-                                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                                <CartesianGrid strokeDasharray="4 4" stroke="var(--border-dim)" vertical={false} />
+                                <XAxis dataKey="time" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} axisLine={{ stroke: 'var(--border-soft)' }} tickLine={false} minTickGap={20} />
+                                <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} axisLine={false} tickLine={false} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Area type="monotone" dataKey="value" name={selected} stroke={color} strokeWidth={3} fill="url(#colorGrad)" dot={false} animationDuration={500} />
                             </AreaChart>
@@ -188,11 +209,11 @@ const HistoryPage = () => {
                 </div>
 
                 {chartData.length > 0 && !fetching && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--s4)', marginTop: 'var(--s6)', paddingTop: 'var(--s6)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        {[{ label: 'Minimum', val: min }, { label: 'Maximum', val: max }, { label: 'Average', val: avg }, { label: 'Readings', val: chartData.length }].map((stat, i) => (
-                            <div key={i}>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{stat.label}</div>
-                                <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-2xl)', fontWeight: 800, color: 'white' }}>{stat.val}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--s4)', marginTop: 'var(--s6)', paddingTop: 'var(--s6)', borderTop: '1px solid var(--border-dim)' }}>
+                        {[{ label: 'Latest', val: latest }, { label: 'Minimum', val: min }, { label: 'Maximum', val: max }, { label: 'Average', val: avg }, { label: 'Readings', val: chartData.length }].map((stat, i) => (
+                            <div key={i} style={{ padding: 'var(--s3)', borderRadius: 'var(--r-md)', background: 'var(--bg-raised)', border: '1px solid var(--border-dim)' }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{stat.label}</div>
+                                <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-xl)', fontWeight: 800, color: 'var(--text-primary)' }}>{stat.val}</span>
                             </div>
                         ))}
                     </div>
