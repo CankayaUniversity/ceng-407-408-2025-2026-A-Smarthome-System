@@ -8,12 +8,19 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { getDetectionDisplayName } from '../utils/faceDisplay';
+import {
+    buildProfileLabelMap,
+    getProfileDisplayName,
+    getDetectionTitle,
+    getDetectionSubtitle,
+} from '../utils/faceDisplay';
+import UnknownProfilePanel from '../components/Identity/UnknownProfilePanel';
 
 const EVENT_FACE_SELECT = `
   id, classification, match_score, resident_id, unknown_profile_id, camera_event_id,
   camera_events(id, snapshot_path, created_at, event_id),
-  residents(name)
+  residents(name),
+  unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status)
 `;
 
 const ACTION_SELECT = `
@@ -59,6 +66,8 @@ const IdentityPage = () => {
         return m;
     }, [residents]);
 
+    const profileLabelMap = useMemo(() => buildProfileLabelMap(profiles), [profiles]);
+
     const revertedActionIds = useMemo(() => {
         const ids = new Set();
         recentActions.forEach(a => {
@@ -72,7 +81,7 @@ const IdentityPage = () => {
         const { data } = await supabase
             .from('face_label_actions')
             .select(ACTION_SELECT)
-            .in('action', ['assign_resident', 'revert_assign', 'unlink_from_resident'])
+            .in('action', ['assign_resident', 'revert_assign', 'unlink_from_resident', 'merge_profiles', 'rename_profile', 'move_sighting', 'dismiss_profile'])
             .order('created_at', { ascending: false })
             .limit(40);
         setRecentActions(data || []);
@@ -152,7 +161,7 @@ const IdentityPage = () => {
             .select(`
               id, match_distance, created_at,
               camera_events(id, snapshot_path, created_at),
-              event_faces(id, classification, match_score)
+              event_faces(id, classification, match_score, camera_event_id)
             `)
             .eq('unknown_face_profile_id', profileId)
             .order('created_at', { ascending: false })
@@ -345,6 +354,26 @@ const IdentityPage = () => {
         if (galleryResidentId) await loadResidentDetections(galleryResidentId);
     };
 
+    const handleProfileRefresh = async (selectProfileId) => {
+        await loadAll();
+        if (selectProfileId) {
+            setSelectedProfileId(selectProfileId);
+            await loadSightings(selectProfileId);
+        } else {
+            setSelectedProfileId(null);
+            setSightings([]);
+        }
+    };
+
+    const handleAssignFromEventFace = async (eventFaceId) => {
+        const { data } = await supabase
+            .from('event_faces')
+            .select(EVENT_FACE_SELECT)
+            .eq('id', eventFaceId)
+            .single();
+        if (data) setAssignTarget(data);
+    };
+
     const actionLabel = (action) => {
         if (action.action === 'assign_resident') {
             const name = residentNameById.get(action.to_resident_id) || 'resident';
@@ -355,6 +384,10 @@ const IdentityPage = () => {
             const name = residentNameById.get(action.to_resident_id) || 'resident';
             return `Unlinked from ${name}`;
         }
+        if (action.action === 'merge_profiles') return 'Merged visitor profiles';
+        if (action.action === 'rename_profile') return 'Renamed visitor';
+        if (action.action === 'move_sighting') return 'Moved / ungrouped photo';
+        if (action.action === 'dismiss_profile') return 'Dismissed visitor profile';
         return action.action;
     };
 
@@ -682,7 +715,7 @@ const IdentityPage = () => {
                                         {thumb ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <UserSearch size={20} style={{ margin: 14, color: 'var(--text-muted)' }} />}
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 700, fontSize: 'var(--size-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.display_label}</div>
+                                        <div style={{ fontWeight: 700, fontSize: 'var(--size-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getProfileDisplayName(p, profileLabelMap)}</div>
                                         <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)', marginTop: 2 }}>
                                             <Hash size={10} style={{ display: 'inline', verticalAlign: -1 }} /> {p.sighting_count} sighting{p.sighting_count !== 1 ? 's' : ''}
                                         </div>
@@ -696,46 +729,17 @@ const IdentityPage = () => {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s5)' }}>
                     {selectedProfile ? (
-                        <div className="card" style={{ padding: 'var(--s5)' }}>
-                            <div style={{ display: 'flex', gap: 'var(--s5)', flexWrap: 'wrap' }}>
-                                <div style={{
-                                    width: 140, height: 140, borderRadius: 'var(--r-xl)', overflow: 'hidden',
-                                    border: '2px solid rgba(155,89,255,0.3)', flexShrink: 0,
-                                }}>
-                                    {selectedProfile.representative_snapshot_path && (
-                                        <img
-                                            src={getPublicUrl('event-snapshots', selectedProfile.representative_snapshot_path)}
-                                            alt=""
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                        />
-                                    )}
-                                </div>
-                                <div>
-                                    <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-xl)', fontWeight: 700, marginBottom: 'var(--s2)' }}>{selectedProfile.display_label}</h2>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--s3)', fontSize: 'var(--size-xs)', color: 'var(--text-muted)' }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> Last seen {selectedProfile.last_seen_at ? formatDistanceToNow(new Date(selectedProfile.last_seen_at), { addSuffix: true }) : '—'}</span>
-                                        <span>{selectedProfile.sighting_count} total sightings</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <h3 style={{ fontSize: 'var(--size-sm)', fontWeight: 700, marginTop: 'var(--s5)', marginBottom: 'var(--s3)' }}>Sighting timeline</h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--s3)' }}>
-                                {sightings.map(s => {
-                                    const path = s.camera_events?.snapshot_path;
-                                    const url = path ? getPublicUrl('event-snapshots', path) : null;
-                                    return (
-                                        <div key={s.id} style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border-soft)' }}>
-                                            <div style={{ aspectRatio: '1', background: '#0a0c10' }}>
-                                                {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                                            </div>
-                                            <div style={{ padding: 6, fontSize: 9, color: 'var(--text-muted)' }}>
-                                                {s.created_at ? formatDistanceToNow(new Date(s.created_at), { addSuffix: true }) : '—'}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                        <UnknownProfilePanel
+                            profile={selectedProfile}
+                            labelMap={profileLabelMap}
+                            otherProfiles={profiles}
+                            sightings={sightings}
+                            residents={residents}
+                            isAdmin={isAdmin}
+                            onRefresh={handleProfileRefresh}
+                            onAssignSighting={isAdmin ? handleAssignFromEventFace : null}
+                            showToast={showToast}
+                        />
                     ) : (
                         <div className="card empty-state" style={{ padding: 'var(--s10)' }}>
                             <UserSearch size={40} style={{ color: 'var(--text-muted)', marginBottom: 'var(--s4)' }} />
@@ -768,12 +772,14 @@ const IdentityPage = () => {
                                             {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 'var(--size-sm)', color: 'var(--crimson-core)' }}>{getDetectionDisplayName(ev)}</div>
+                                            <div style={{ fontWeight: 600, fontSize: 'var(--size-sm)', color: face.unknown_profile_id ? 'var(--violet-core)' : 'var(--text-secondary)' }}>
+                                                {getDetectionTitle(ev, profileLabelMap)}
+                                            </div>
                                             <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>
+                                                {getDetectionSubtitle(ev) && <span style={{ marginRight: 6 }}>{getDetectionSubtitle(ev)}</span>}
                                                 {face.camera_events?.created_at
                                                     ? formatDistanceToNow(new Date(face.camera_events.created_at), { addSuffix: true })
                                                     : '—'}
-                                                {face.match_score != null && ` · score ${Number(face.match_score).toFixed(2)}`}
                                             </div>
                                         </div>
                                         {isAdmin && (

@@ -23,6 +23,26 @@ def _utc_now_iso() -> str:
 UNKNOWN_CLUSTER_THRESHOLD = float(os.getenv("UNKNOWN_CLUSTER_THRESHOLD", "0.48"))
 
 
+def _next_visitor_label(supabase) -> str:
+    """Allocate Visitor 1, Visitor 2, … (skip custom admin labels)."""
+    import re
+
+    rows = (
+        supabase.table("unknown_face_profiles")
+        .select("display_label")
+        .execute()
+        .data
+        or []
+    )
+    max_n = 0
+    for row in rows:
+        label = (row.get("display_label") or "").strip()
+        m = re.match(r"^Visitor\s+(\d+)$", label, re.IGNORECASE)
+        if m:
+            max_n = max(max_n, int(m.group(1)))
+    return f"Visitor {max_n + 1}"
+
+
 def _euclidean(a: list, b: list) -> float:
     return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
 
@@ -102,15 +122,10 @@ def cluster_unknown_detection(
         old_centroid = best_row.get("centroid_embedding") or []
         new_centroid = _mean_embedding([old_centroid, embedding]) if old_centroid else embedding
         new_count = int(best_row.get("sighting_count") or 0) + 1
-        label = best_row.get("display_label") or "Unknown visitor"
-        if new_count > 1 and not label.startswith("Unknown #"):
-            label = f"Unknown #{str(profile_id)[:8]}"
-
         supabase.table("unknown_face_profiles").update({
             "centroid_embedding": new_centroid,
             "sighting_count": new_count,
             "last_seen_at": _utc_now_iso(),
-            "display_label": label,
         }).eq("id", profile_id).execute()
 
         supabase.table("unknown_face_sightings").insert({
@@ -132,8 +147,9 @@ def cluster_unknown_detection(
         }
 
     # New profile
+    label = _next_visitor_label(supabase)
     insert_row = {
-        "display_label": "Unknown visitor",
+        "display_label": label,
         "sighting_count": 1,
         "centroid_embedding": embedding,
         "representative_snapshot_path": snapshot_path,
@@ -141,11 +157,6 @@ def cluster_unknown_detection(
     }
     created = supabase.table("unknown_face_profiles").insert(insert_row).execute()
     profile_id = created.data[0]["id"]
-    short = str(profile_id).split("-")[0]
-    label = f"Unknown #{short}"
-    supabase.table("unknown_face_profiles").update({
-        "display_label": label,
-    }).eq("id", profile_id).execute()
     supabase.table("unknown_face_sightings").insert({
         "unknown_face_profile_id": profile_id,
         "event_face_id": event_face_id,

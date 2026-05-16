@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Shield, ShieldOff, Loader } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { getDetectionDisplayName, getDetectionTone } from '../../utils/faceDisplay';
+import { getDetectionTitle, getDetectionSubtitle, getDetectionTone } from '../../utils/faceDisplay';
 
 const PREVIEW_W = 240;
 const PREVIEW_H = 180;
 const GAP = 12;
 
-const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
+const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl, labelMap }) => {
     const [pos, setPos] = useState(() => computePosition(anchorRect));
 
     useEffect(() => {
@@ -20,7 +20,8 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
     const tone = getDetectionTone(event);
     const isScanning = tone === 'scanning';
     const isKnown = tone === 'resident';
-    const personName = getDetectionDisplayName(event);
+    const personName = getDetectionTitle(event, labelMap);
+    const personMeta = getDetectionSubtitle(event);
 
     const node = (
         <div
@@ -97,7 +98,7 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
                         }}
                     >
                         {isScanning ? <Loader size={11} className="spin-icon" /> : isKnown ? <Shield size={11} /> : <ShieldOff size={11} />}
-                        {isScanning ? 'Scanning' : isKnown ? 'Resident' : 'Unknown'}
+                        {isScanning ? 'Scanning' : isKnown ? 'Resident' : 'Visitor'}
                     </div>
                 </div>
                 <div style={{ padding: 'var(--s3) var(--s4)' }}>
@@ -114,6 +115,7 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
                         {personName}
                     </div>
                     <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)', marginTop: 2 }}>
+                        {personMeta && <span style={{ marginRight: 6 }}>{personMeta}</span>}
                         {event.created_at
                             ? formatDistanceToNow(new Date(event.created_at), { addSuffix: true })
                             : 'Just now'}

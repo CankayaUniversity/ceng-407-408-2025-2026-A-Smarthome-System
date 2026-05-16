@@ -1,11 +1,17 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Camera, Radio, Shield, ShieldOff, CheckCircle, XCircle, User, Loader } from 'lucide-react';
 import { useRealtime } from '../context/RealtimeContext';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { formatDistanceToNow } from 'date-fns';
 import DetectionHoverPreview from '../components/Surveillance/DetectionHoverPreview';
 import LiveCameraFeed from '../components/Surveillance/LiveCameraFeed';
-import { getDetectionDisplayName, getDetectionTone } from '../utils/faceDisplay';
+import {
+    getDetectionTitle,
+    getDetectionSubtitle,
+    getDetectionTone,
+    collectUnknownProfilesFromEvents,
+    buildProfileLabelMap,
+} from '../utils/faceDisplay';
 
 const HOVER_DELAY_MS = 250;
 
@@ -23,7 +29,7 @@ const CameraPage = () => {
             try {
                 const { data } = await supabase
                     .from('camera_events')
-                    .select('*, events(*), event_faces(*, residents(name), unknown_face_profiles(id, display_label, sighting_count))')
+                    .select('*, events(*), event_faces(*, residents(name), unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status))')
                     .order('created_at', { ascending: false })
                     .limit(20);
                 setEvents(data || []);
@@ -64,6 +70,10 @@ const CameraPage = () => {
 
     const latestSnapshotUrl = events[0]?.snapshot_path
         ? getPublicUrl('event-snapshots', events[0].snapshot_path) : null;
+
+    const visitorLabelMap = useMemo(() => {
+        return buildProfileLabelMap(collectUnknownProfilesFromEvents(events));
+    }, [events]);
 
 
     const handleRowEnter = (e, ev) => {
@@ -142,13 +152,15 @@ const CameraPage = () => {
                                 const tone = getDetectionTone(ev);
                                 const isScanning = tone === 'scanning';
                                 const isKnown = tone === 'resident';
-                                const personName = getDetectionDisplayName(ev);
+                                const isVisitor = tone === 'visitor';
+                                const personName = getDetectionTitle(ev, visitorLabelMap);
+                                const personMeta = getDetectionSubtitle(ev);
                                 const rowColor = isScanning
                                     ? 'var(--amber-core, #f59e0b)'
-                                    : isKnown ? 'var(--jade-core)' : 'var(--crimson-core)';
+                                    : isKnown ? 'var(--jade-core)' : isVisitor ? 'var(--violet-core)' : 'var(--text-secondary)';
                                 const rowBg = isScanning
                                     ? 'rgba(245,158,11,0.1)'
-                                    : isKnown ? 'rgba(0,229,160,0.1)' : 'rgba(255,59,92,0.1)';
+                                    : isKnown ? 'rgba(0,229,160,0.1)' : isVisitor ? 'rgba(155,89,255,0.1)' : 'rgba(255,59,92,0.08)';
                                 return (
                                     <div
                                         key={ev.id || i}
@@ -161,14 +173,15 @@ const CameraPage = () => {
                                             {isScanning ? <Loader size={16} className="spin-icon" /> : isKnown ? <Shield size={16} /> : <ShieldOff size={16} />}
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: rowColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {personName}
                                             </div>
-                                            <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>
-                                                {ev.created_at ? formatDistanceToNow(new Date(ev.created_at), { addSuffix: true }) : 'Just now'}
+                                            <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)', marginTop: 1 }}>
+                                                {personMeta && <span style={{ marginRight: 6 }}>{personMeta}</span>}
+                                                <span>{ev.created_at ? formatDistanceToNow(new Date(ev.created_at), { addSuffix: true }) : 'Just now'}</span>
                                             </div>
                                         </div>
-                                        {isScanning ? <Loader size={14} className="spin-icon" style={{ color: rowColor, flexShrink: 0 }} /> : isKnown ? <CheckCircle size={14} style={{ color: 'var(--jade-core)', flexShrink: 0 }} /> : <XCircle size={14} style={{ color: 'var(--crimson-core)', flexShrink: 0 }} />}
+                                        {isScanning ? <Loader size={14} className="spin-icon" style={{ color: rowColor, flexShrink: 0 }} /> : isKnown ? <CheckCircle size={14} style={{ color: 'var(--jade-core)', flexShrink: 0 }} /> : isVisitor ? <User size={14} style={{ color: 'var(--violet-core)', flexShrink: 0 }} /> : <XCircle size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
                                     </div>
                                 );
                             })
@@ -182,6 +195,7 @@ const CameraPage = () => {
                     event={hoverState.event}
                     anchorRect={hoverState.rect}
                     snapshotUrl={hoverState.url}
+                    labelMap={visitorLabelMap}
                 />
             )}
 
