@@ -52,8 +52,9 @@ def _build_local_residents(api_residents: list) -> dict:
         embedding = r.get("embedding")
         if not embedding:
             continue
+        # Always use Supabase residents.id (UUID) so event_faces.resident_id FK resolves in the UI.
         local.append({
-            "person_id": r.get("personId") or r.get("person_id") or r["id"],
+            "person_id": r["id"],
             "name": r["name"],
             "is_active": True,
             "created_at": r.get("createdAt", datetime.now().isoformat()),

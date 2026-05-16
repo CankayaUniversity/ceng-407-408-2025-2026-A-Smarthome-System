@@ -1,3 +1,10 @@
+"""
+Local development utility — enroll a face into app/storage/residents.json only.
+
+Production enrollment uses the web/mobile Residents page → Supabase
+(residents.photo_path + gateway embedding backfill). Use this script on the Pi
+when testing FaceMatcher offline without cloud sync.
+"""
 import argparse
 import json
 from datetime import datetime

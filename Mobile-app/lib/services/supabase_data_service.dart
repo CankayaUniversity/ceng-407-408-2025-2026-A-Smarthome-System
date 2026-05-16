@@ -149,6 +149,9 @@ class SupabaseDataService {
   }
 
   // ─── FACE CAPTURES (legacy compat) ─────────────────────────
+  // Loaded by SupabaseDataProvider but no screen reads faceCaptures yet.
+  // Prefer camera_events + event_faces joins (see camera_screen.dart).
+  // Safe to refactor when mobile identity review page is added.
 
   static Future<List<FaceCapture>> getFaceCaptures({int limit = 20}) async {
     try {

@@ -1,0 +1,1 @@
+-- See supabase_setup_v5.sql — run in Supabase SQL Editor after v4.

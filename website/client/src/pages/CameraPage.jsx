@@ -5,6 +5,7 @@ import { supabase, getPublicUrl } from '../services/supabase';
 import { formatDistanceToNow } from 'date-fns';
 import DetectionHoverPreview from '../components/Surveillance/DetectionHoverPreview';
 import LiveCameraFeed from '../components/Surveillance/LiveCameraFeed';
+import { getDetectionDisplayName, getDetectionTone } from '../utils/faceDisplay';
 
 const HOVER_DELAY_MS = 250;
 
@@ -22,7 +23,7 @@ const CameraPage = () => {
             try {
                 const { data } = await supabase
                     .from('camera_events')
-                    .select('*, events(*), event_faces(*, residents(name, label))')
+                    .select('*, events(*), event_faces(*, residents(name), unknown_face_profiles(id, display_label, sighting_count))')
                     .order('created_at', { ascending: false })
                     .limit(20);
                 setEvents(data || []);
@@ -36,7 +37,7 @@ const CameraPage = () => {
         try {
             const { data } = await supabase
                 .from('camera_events')
-                .select('*, events(*), event_faces(*, residents(name, label))')
+                .select('*, events(*), event_faces(*, residents(name), unknown_face_profiles(id, display_label, sighting_count))')
                 .eq('id', eventId)
                 .single();
             if (data) {
@@ -138,12 +139,10 @@ const CameraPage = () => {
                             </div>
                         ) : (
                             events.map((ev, i) => {
-                                const face = ev.event_faces?.[0];
-                                const isScanning = ev._scanning && !face;
-                                const isKnown = face?.classification === 'resident';
-                                const personName = isScanning
-                                    ? 'Scanning...'
-                                    : face?.residents?.name || (isKnown ? 'Authorized Person' : 'Unknown Person');
+                                const tone = getDetectionTone(ev);
+                                const isScanning = tone === 'scanning';
+                                const isKnown = tone === 'resident';
+                                const personName = getDetectionDisplayName(ev);
                                 const rowColor = isScanning
                                     ? 'var(--amber-core, #f59e0b)'
                                     : isKnown ? 'var(--jade-core)' : 'var(--crimson-core)';

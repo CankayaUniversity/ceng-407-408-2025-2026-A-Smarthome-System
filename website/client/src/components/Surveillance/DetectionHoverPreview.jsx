@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Shield, ShieldOff, Loader } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { getDetectionDisplayName, getDetectionTone } from '../../utils/faceDisplay';
 
 const PREVIEW_W = 240;
 const PREVIEW_H = 180;
@@ -16,12 +17,10 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
 
     if (!event || !anchorRect) return null;
 
-    const face = event.event_faces?.[0];
-    const isScanning = event._scanning && !face;
-    const isKnown = face?.classification === 'resident';
-    const personName = isScanning
-        ? 'Scanning...'
-        : face?.residents?.name || (isKnown ? 'Authorized Person' : 'Unknown Person');
+    const tone = getDetectionTone(event);
+    const isScanning = tone === 'scanning';
+    const isKnown = tone === 'resident';
+    const personName = getDetectionDisplayName(event);
 
     const node = (
         <div

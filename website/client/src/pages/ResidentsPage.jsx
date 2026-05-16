@@ -95,7 +95,7 @@ const ResidentsPage = () => {
     const [refreshing, setRefreshing] = useState(false);
 
     const loadResidentsRows = async () => {
-        const { data } = await supabase.from('residents').select('*, resident_faces(*)').order('created_at', { ascending: false });
+        const { data } = await supabase.from('residents').select('*').order('created_at', { ascending: false });
         return data || [];
     };
 
@@ -177,11 +177,11 @@ const ResidentsPage = () => {
                     .eq('id', data.id)
                     .select()
                     .single();
-                setResidents(prev => [{ ...(updated || { ...data, account_email: accountEmail.trim(), auth_user_id: result.userId }), resident_faces: [] }, ...prev]);
+                setResidents(prev => [{ ...(updated || { ...data, account_email: accountEmail.trim(), auth_user_id: result.userId }) }, ...prev]);
                 resetModal();
                 setEmailSent({ name: formName.trim(), email: accountEmail.trim() });
             } else {
-                setResidents(prev => [{ ...data, resident_faces: [] }, ...prev]);
+                setResidents(prev => [{ ...data }, ...prev]);
                 resetModal();
             }
         } catch (err) {
@@ -278,15 +278,12 @@ const ResidentsPage = () => {
             ) : (
                 <div className="grid grid-3">
                     {residents.map((r, i) => {
-                        const face = r.resident_faces?.[0];
-                        const photoUrl = face?.image_path
-                            ? getPublicUrl('event-snapshots', face.image_path)
-                            : (r.photo_path ? getPublicUrl('event-snapshots', r.photo_path) : null);
-                        const rawEmb = face?.embedding_json ?? r.embedding;
+                        const photoUrl = r.photo_path ? getPublicUrl('event-snapshots', r.photo_path) : null;
+                        const rawEmb = r.embedding;
                         const hasEmbedding = Array.isArray(rawEmb)
                             ? rawEmb.length > 0
                             : Boolean(rawEmb);
-                        const hasPhoto = Boolean(r.photo_path || face?.image_path);
+                        const hasPhoto = Boolean(r.photo_path);
                         let statusLine;
                         let badgeContent;
                         let badgeClass;

@@ -5,6 +5,7 @@ import {
     TrendingUp,
     Camera,
     ShieldAlert,
+    UserSearch,
     Users,
     Settings,
     LogOut,
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
     { to: '/rooms', icon: Map, label: 'Floor Plan' },
     { to: '/history', icon: TrendingUp, label: 'Analytics' },
     { to: '/camera', icon: Camera, label: 'Surveillance' },
+    { to: '/identity', icon: UserSearch, label: 'Identity Review' },
     { to: '/alerts', icon: ShieldAlert, label: 'Alerts' },
     // Face profiles — admin and resident can both manage
     { to: '/residents', icon: Users, label: 'Residents' },

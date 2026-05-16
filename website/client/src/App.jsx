@@ -18,6 +18,7 @@ import AlertsPage from './pages/AlertsPage';
 import ResidentsPage from './pages/ResidentsPage';
 import SettingsPage from './pages/SettingsPage';
 import RoomsPage from './pages/RoomsPage';
+import IdentityPage from './pages/IdentityPage';
 
 import { useAuth } from './hooks/useAuth';
 
@@ -53,6 +54,7 @@ function App() {
                                     <Route path="/rooms" element={<RoomsPage />} />
                                     <Route path="/history" element={<HistoryPage />} />
                                     <Route path="/camera" element={<CameraPage />} />
+                                    <Route path="/identity" element={<IdentityPage />} />
                                     <Route path="/alerts" element={<AlertsPage />} />
                                     <Route path="/residents" element={<ResidentsPage />} />
                                     <Route path="/settings" element={<SettingsPage />} />

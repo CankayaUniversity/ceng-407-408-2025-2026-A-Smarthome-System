@@ -403,8 +403,11 @@ def analyze_burst_and_upload(image_paths: list[str]):
             upload_intelligent_snapshot(
                 event_id=response["event_id"],
                 is_resident=is_resident,
-                resident_id=primary.get("person_id"),
+                resident_id=primary.get("person_id") if is_resident else None,
                 image_path=selected_path,
+                face_count=face_count,
+                match_score=primary.get("confidence"),
+                bbox=primary.get("bbox"),
             )
 
     except Exception as exc:

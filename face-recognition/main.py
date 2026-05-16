@@ -48,8 +48,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 SNAPSHOT_BUCKET = os.getenv("SUPABASE_SNAPSHOT_BUCKET", "event-snapshots")
+# Storage prefixes under bucket `event-snapshots` (see docs/STORAGE.md).
+# Do not use legacy folder `strangers/` — it is unused.
 RESIDENT_PREFIX = os.getenv("RESIDENT_SNAPSHOT_PREFIX", "resident_snapshots")
 UNKNOWN_PREFIX = os.getenv("UNKNOWN_SNAPSHOT_PREFIX", "unknown_snapshots")
+ENROLL_PREFIX = os.getenv("RESIDENT_ENROLL_PREFIX", "resident_photos")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment.")
@@ -490,19 +493,43 @@ async def upload_intelligent_snapshot(
 
         classification = "resident" if is_resident else "unknown"
 
-        supabase.table("event_faces").insert({
-            "camera_event_id": camera_event_id,
-            "resident_id": resident_id if is_resident else None,
-            "match_score": match_score,
-            "classification": classification,
-            "bbox": bbox_json,
-        }).execute()
+        face_row = (
+            supabase.table("event_faces")
+            .insert({
+                "camera_event_id": camera_event_id,
+                "resident_id": resident_id if is_resident else None,
+                "match_score": match_score,
+                "classification": classification,
+                "bbox": bbox_json,
+            })
+            .execute()
+        )
+        event_face_id = face_row.data[0]["id"]
+
+        cluster_info = None
+        if classification == "unknown":
+            try:
+                from app.vision.embedder import FaceEmbedder
+                from app.services.unknown_clustering import cluster_unknown_detection
+
+                cluster_info = cluster_unknown_detection(
+                    supabase,
+                    FaceEmbedder(),
+                    file_bytes,
+                    event_face_id,
+                    camera_event_id,
+                    file_name,
+                )
+            except Exception as cluster_exc:
+                logger.warning("Unknown face clustering skipped: %s", cluster_exc)
 
         return {
             "status": "success",
             "camera_event_id": camera_event_id,
+            "event_face_id": event_face_id,
             "storage_path": file_name,
             "classification": classification,
+            "unknown_cluster": cluster_info,
         }
 
     except HTTPException:
