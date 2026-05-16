@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
     UserSearch, Users, RefreshCw, ChevronRight, AlertTriangle,
-    CheckCircle, X, UserPlus, Camera, Clock, Hash,
+    CheckCircle, X, UserPlus, Camera, Clock, Hash, History,
+    Undo2, Unlink, ImageIcon,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { supabase, getPublicUrl } from '../services/supabase';
@@ -15,25 +16,65 @@ const EVENT_FACE_SELECT = `
   residents(name)
 `;
 
+const ACTION_SELECT = `
+  id, action, created_at, metadata, event_face_id, to_resident_id, from_unknown_profile_id,
+  event_faces(
+    id, classification, resident_id,
+    camera_events(id, snapshot_path, created_at)
+  )
+`;
+
 const IdentityPage = () => {
     const { isAdmin } = useAuth();
     const [profiles, setProfiles] = useState([]);
     const [recentUnknowns, setRecentUnknowns] = useState([]);
     const [residents, setResidents] = useState([]);
+    const [recentActions, setRecentActions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedProfileId, setSelectedProfileId] = useState(null);
     const [sightings, setSightings] = useState([]);
     const [assignTarget, setAssignTarget] = useState(null);
     const [assignResidentId, setAssignResidentId] = useState('');
+    const [assignUseEnrollment, setAssignUseEnrollment] = useState(false);
     const [assignSaving, setAssignSaving] = useState(false);
     const [assignError, setAssignError] = useState(null);
+    const [revertSavingId, setRevertSavingId] = useState(null);
+    const [unlinkSavingId, setUnlinkSavingId] = useState(null);
+    const [galleryResidentId, setGalleryResidentId] = useState('');
+    const [residentDetections, setResidentDetections] = useState([]);
+    const [galleryLoading, setGalleryLoading] = useState(false);
     const [toast, setToast] = useState(null);
 
     const showToast = (msg, type = 'success') => {
         setToast({ msg, type });
-        setTimeout(() => setToast(null), 4000);
+        setTimeout(() => setToast(null), 4500);
     };
+
+    const residentNameById = useMemo(() => {
+        const m = new Map();
+        residents.forEach(r => m.set(r.id, r.name || 'Resident'));
+        return m;
+    }, [residents]);
+
+    const revertedActionIds = useMemo(() => {
+        const ids = new Set();
+        recentActions.forEach(a => {
+            const src = a.metadata?.source_action_id;
+            if (a.action === 'revert_assign' && src) ids.add(src);
+        });
+        return ids;
+    }, [recentActions]);
+
+    const loadRecentActions = useCallback(async () => {
+        const { data } = await supabase
+            .from('face_label_actions')
+            .select(ACTION_SELECT)
+            .in('action', ['assign_resident', 'revert_assign', 'unlink_from_resident'])
+            .order('created_at', { ascending: false })
+            .limit(40);
+        setRecentActions(data || []);
+    }, []);
 
     const loadAll = useCallback(async () => {
         const [profRes, facesRes, resRes] = await Promise.all([
@@ -58,6 +99,29 @@ const IdentityPage = () => {
         });
         setRecentUnknowns(faces.slice(0, 30));
         setResidents(resRes.data || []);
+        await loadRecentActions();
+    }, [loadRecentActions]);
+
+    const loadResidentDetections = useCallback(async (residentId) => {
+        if (!residentId) {
+            setResidentDetections([]);
+            return;
+        }
+        setGalleryLoading(true);
+        const { data } = await supabase
+            .from('event_faces')
+            .select(EVENT_FACE_SELECT)
+            .eq('resident_id', residentId)
+            .eq('classification', 'resident')
+            .order('id', { ascending: false })
+            .limit(60);
+        const sorted = (data || []).sort((a, b) => {
+            const ta = a.camera_events?.created_at || '';
+            const tb = b.camera_events?.created_at || '';
+            return tb.localeCompare(ta);
+        });
+        setResidentDetections(sorted);
+        setGalleryLoading(false);
     }, []);
 
     useEffect(() => {
@@ -68,10 +132,15 @@ const IdentityPage = () => {
         })();
     }, [loadAll]);
 
+    useEffect(() => {
+        loadResidentDetections(galleryResidentId);
+    }, [galleryResidentId, loadResidentDetections]);
+
     const handleRefresh = async () => {
         setRefreshing(true);
         await loadAll();
         if (selectedProfileId) await loadSightings(selectedProfileId);
+        if (galleryResidentId) await loadResidentDetections(galleryResidentId);
         setRefreshing(false);
     };
 
@@ -99,12 +168,32 @@ const IdentityPage = () => {
         [profiles, selectedProfileId],
     );
 
+    const galleryResident = useMemo(
+        () => residents.find(r => r.id === galleryResidentId) ?? null,
+        [residents, galleryResidentId],
+    );
+
     const reviewQueue = useMemo(() => {
         return recentUnknowns.filter(f => {
             const score = f.match_score;
             return score != null && score > 0.45 && score < 0.65;
         });
     }, [recentUnknowns]);
+
+    const triggerBackfillIfNeeded = async (useEnrollment) => {
+        if (!useEnrollment) return;
+        const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
+        const deviceId = import.meta.env.VITE_DEVICE_ID;
+        if (!gatewayUrl || !deviceId) return;
+        try {
+            await fetch(
+                `${gatewayUrl.replace(/\/$/, '')}/api/v1/residents/backfill-embeddings?device_id=${deviceId}`,
+                { method: 'POST' },
+            );
+        } catch {
+            /* optional */
+        }
+    };
 
     const handleAssign = async (e) => {
         e.preventDefault();
@@ -115,7 +204,7 @@ const IdentityPage = () => {
         const { data, error } = await supabase.rpc('assign_event_face_to_resident', {
             p_event_face_id: assignTarget.id,
             p_resident_id: assignResidentId,
-            p_use_snapshot_for_enrollment: true,
+            p_use_snapshot_for_enrollment: assignUseEnrollment,
         });
 
         setAssignSaving(false);
@@ -129,27 +218,83 @@ const IdentityPage = () => {
             return;
         }
 
-        const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
-        if (gatewayUrl) {
-            try {
-                const deviceId = import.meta.env.VITE_DEVICE_ID;
-                if (deviceId) {
-                    await fetch(
-                        `${gatewayUrl.replace(/\/$/, '')}/api/v1/residents/backfill-embeddings?device_id=${deviceId}`,
-                        { method: 'POST' },
-                    );
-                }
-            } catch {
-                /* optional */
-            }
-        }
+        await triggerBackfillIfNeeded(assignUseEnrollment);
 
         setAssignTarget(null);
         setAssignResidentId('');
-        showToast('Face assigned to resident. Embedding will refresh on the gateway.');
+        setAssignUseEnrollment(false);
+        const name = residentNameById.get(assignResidentId) || 'resident';
+        showToast(
+            assignUseEnrollment
+                ? `Linked to ${name} and updated enrollment photo.`
+                : `Linked to ${name}. Enrollment photo unchanged.`,
+        );
         await loadAll();
         if (selectedProfileId) await loadSightings(selectedProfileId);
+        if (galleryResidentId === assignResidentId) await loadResidentDetections(galleryResidentId);
     };
+
+    const handleRevert = async (actionId) => {
+        setRevertSavingId(actionId);
+        const { data, error } = await supabase.rpc('revert_face_label_action', {
+            p_action_id: actionId,
+        });
+        setRevertSavingId(null);
+
+        if (error) {
+            showToast(error.message, 'error');
+            return;
+        }
+        if (data?.success === false) {
+            showToast(data.error || 'Revert failed', 'error');
+            return;
+        }
+
+        showToast('Assignment reverted. Detection is unknown again.');
+        await loadAll();
+        if (galleryResidentId) await loadResidentDetections(galleryResidentId);
+    };
+
+    const handleUnlink = async (eventFaceId) => {
+        if (!window.confirm('Mark this detection as unknown? The resident enrollment photo will not change.')) {
+            return;
+        }
+        setUnlinkSavingId(eventFaceId);
+        const { data, error } = await supabase.rpc('unlink_event_face_from_resident', {
+            p_event_face_id: eventFaceId,
+        });
+        setUnlinkSavingId(null);
+
+        if (error) {
+            showToast(error.message, 'error');
+            return;
+        }
+        if (data?.success === false) {
+            showToast(data.error || 'Unlink failed', 'error');
+            return;
+        }
+
+        showToast('Detection unlinked from resident.');
+        await loadAll();
+        if (galleryResidentId) await loadResidentDetections(galleryResidentId);
+    };
+
+    const actionLabel = (action) => {
+        if (action.action === 'assign_resident') {
+            const name = residentNameById.get(action.to_resident_id) || 'resident';
+            return `Assigned → ${name}`;
+        }
+        if (action.action === 'revert_assign') return 'Reverted assign';
+        if (action.action === 'unlink_from_resident') {
+            const name = residentNameById.get(action.to_resident_id) || 'resident';
+            return `Unlinked from ${name}`;
+        }
+        return action.action;
+    };
+
+    const actionSnapshotPath = (action) =>
+        action.metadata?.snapshot_path
+        || action.event_faces?.camera_events?.snapshot_path;
 
     if (loading) {
         return (
@@ -169,7 +314,7 @@ const IdentityPage = () => {
                     background: toast.type === 'success' ? 'rgba(0,229,160,0.12)' : 'rgba(255,59,92,0.12)',
                     border: `1px solid ${toast.type === 'success' ? 'rgba(0,229,160,0.35)' : 'rgba(255,59,92,0.35)'}`,
                     color: toast.type === 'success' ? 'var(--jade-core)' : 'var(--crimson-core)',
-                    fontSize: 'var(--size-sm)', fontWeight: 600, maxWidth: 360,
+                    fontSize: 'var(--size-sm)', fontWeight: 600, maxWidth: 400,
                     boxShadow: 'var(--shadow-modal)',
                 }}>
                     {toast.msg}
@@ -182,9 +327,10 @@ const IdentityPage = () => {
                         <UserSearch size={28} style={{ color: 'var(--violet-core)' }} />
                         Identity Review
                     </h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)', maxWidth: 640, lineHeight: 1.55 }}>
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s2)', maxWidth: 680, lineHeight: 1.55 }}>
                         Track recurring unknown visitors, correct mis-detections, and link faces to residents.
-                        Live camera feed stays on <Link to="/camera" style={{ color: 'var(--ember-core)' }}>Surveillance</Link>.
+                        Assign keeps enrollment photos unless you opt in. Live feed on{' '}
+                        <Link to="/camera" style={{ color: 'var(--ember-core)' }}>Surveillance</Link>.
                     </p>
                 </div>
                 <button type="button" className="btn btn-ghost" onClick={handleRefresh} disabled={refreshing}>
@@ -197,9 +343,163 @@ const IdentityPage = () => {
                     <div style={{ display: 'flex', gap: 'var(--s3)', alignItems: 'flex-start' }}>
                         <AlertTriangle size={18} style={{ color: 'var(--amber-core)', flexShrink: 0 }} />
                         <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            View-only mode. Only administrators can assign faces to residents.
+                            View-only mode. Only administrators can assign, revert, or unlink faces.
                         </p>
                     </div>
+                </div>
+            )}
+
+            {isAdmin && recentActions.length > 0 && (
+                <div className="card" style={{ marginBottom: 'var(--s5)', padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: 'var(--s4) var(--s5)', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-raised)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <History size={16} style={{ color: 'var(--cyan-core)' }} />
+                        <span style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Recent manual corrections</span>
+                    </div>
+                    <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                        {recentActions.map(action => {
+                            const snap = actionSnapshotPath(action);
+                            const url = snap ? getPublicUrl('event-snapshots', snap) : null;
+                            const canRevert = action.action === 'assign_resident' && !revertedActionIds.has(action.id);
+                            const isReverted = action.action === 'assign_resident' && revertedActionIds.has(action.id);
+                            return (
+                                <div
+                                    key={action.id}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 'var(--s3)',
+                                        padding: 'var(--s3) var(--s5)', borderBottom: '1px solid var(--border-dim)',
+                                        opacity: isReverted ? 0.55 : 1,
+                                    }}
+                                >
+                                    <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-base)' }}>
+                                        {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, fontSize: 'var(--size-sm)' }}>{actionLabel(action)}</div>
+                                        <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>
+                                            {action.created_at
+                                                ? formatDistanceToNow(new Date(action.created_at), { addSuffix: true })
+                                                : '—'}
+                                            {action.metadata?.enrollment_updated && ' · enrollment photo updated'}
+                                            {isReverted && ' · reverted'}
+                                        </div>
+                                    </div>
+                                    {canRevert && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            disabled={revertSavingId === action.id}
+                                            onClick={() => handleRevert(action.id)}
+                                            style={{ color: 'var(--amber-core)' }}
+                                        >
+                                            {revertSavingId === action.id
+                                                ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                                                : <><Undo2 size={13} /> Revert</>}
+                                        </button>
+                                    )}
+                                    {action.event_face_id && (
+                                        <Link to="/camera" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                                            <Camera size={12} />
+                                        </Link>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {isAdmin && (
+                <div className="card" style={{ marginBottom: 'var(--s5)', padding: 'var(--s5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s4)' }}>
+                        <ImageIcon size={16} style={{ color: 'var(--jade-core)' }} />
+                        <span style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Resident linked detections</span>
+                    </div>
+                    <p style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--s4)', lineHeight: 1.5 }}>
+                        Enrollment photo is separate from camera detections. Unlink if a snapshot was wrongly assigned to this person.
+                    </p>
+                    <div className="form-group" style={{ marginBottom: 'var(--s5)', maxWidth: 360 }}>
+                        <label className="form-label">Resident</label>
+                        <select
+                            className="form-input"
+                            value={galleryResidentId}
+                            onChange={e => setGalleryResidentId(e.target.value)}
+                        >
+                            <option value="">Select resident…</option>
+                            {residents.map(r => (
+                                <option key={r.id} value={r.id}>{r.name || r.id}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {galleryResident && (
+                        <div style={{ display: 'flex', gap: 'var(--s5)', flexWrap: 'wrap', marginBottom: 'var(--s5)' }}>
+                            <div>
+                                <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                    Enrollment photo
+                                </div>
+                                <div style={{
+                                    width: 100, height: 100, borderRadius: 'var(--r-lg)', overflow: 'hidden',
+                                    border: '2px solid rgba(0,229,160,0.25)', background: 'var(--bg-base)',
+                                }}>
+                                    {galleryResident.photo_path ? (
+                                        <img
+                                            src={getPublicUrl('event-snapshots', galleryResident.photo_path)}
+                                            alt=""
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                    ) : (
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 11 }}>
+                                            No photo
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 200 }}>
+                                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--size-lg)' }}>{galleryResident.name}</div>
+                                <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                                    {galleryLoading ? 'Loading…' : `${residentDetections.length} linked detection${residentDetections.length !== 1 ? 's' : ''}`}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {galleryResidentId && !galleryLoading && residentDetections.length === 0 && (
+                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)' }}>No detections linked to this resident yet.</p>
+                    )}
+
+                    {residentDetections.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 'var(--s3)' }}>
+                            {residentDetections.map(face => {
+                                const snap = face.camera_events?.snapshot_path;
+                                const url = snap ? getPublicUrl('event-snapshots', snap) : null;
+                                return (
+                                    <div key={face.id} style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border-soft)' }}>
+                                        <div style={{ aspectRatio: '1', background: '#0a0c10' }}>
+                                            {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                        </div>
+                                        <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                                                {face.camera_events?.created_at
+                                                    ? formatDistanceToNow(new Date(face.camera_events.created_at), { addSuffix: true })
+                                                    : '—'}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-sm"
+                                                style={{ fontSize: 10, padding: '2px 6px', color: 'var(--crimson-core)' }}
+                                                disabled={unlinkSavingId === face.id}
+                                                onClick={() => handleUnlink(face.id)}
+                                            >
+                                                {unlinkSavingId === face.id
+                                                    ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                                                    : <><Unlink size={11} /> Not this person</>}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -239,7 +539,6 @@ const IdentityPage = () => {
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 'var(--s5)', alignItems: 'start' }}>
-                {/* Unknown profiles */}
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                     <div style={{ padding: 'var(--s4) var(--s5)', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-raised)' }}>
                         <div style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Unknown visitors</div>
@@ -286,7 +585,6 @@ const IdentityPage = () => {
                     </div>
                 </div>
 
-                {/* Detail + recent */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s5)' }}>
                     {selectedProfile ? (
                         <div className="card" style={{ padding: 'var(--s5)' }}>
@@ -392,8 +690,9 @@ const IdentityPage = () => {
                             </h2>
                             <button type="button" className="modal-close" onClick={() => setAssignTarget(null)}><X size={20} /></button>
                         </div>
-                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--s5)', lineHeight: 1.55 }}>
-                            This detection will be marked as the selected resident. The snapshot can be used to refresh their enrollment photo and embedding on the gateway.
+                        <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--s4)', lineHeight: 1.55 }}>
+                            Links this detection to the resident. The snapshot stays in storage as audit evidence.
+                            Enrollment photo on Residents is <strong>not</strong> changed unless you opt in below.
                         </p>
                         {assignError && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{assignError}</div>}
                         <form onSubmit={handleAssign} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
@@ -406,6 +705,20 @@ const IdentityPage = () => {
                                     ))}
                                 </select>
                             </div>
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: 'var(--size-sm)', color: 'var(--text-secondary)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={assignUseEnrollment}
+                                    onChange={e => setAssignUseEnrollment(e.target.checked)}
+                                    style={{ marginTop: 3 }}
+                                />
+                                <span>
+                                    Also replace enrollment photo with this snapshot
+                                    <span style={{ display: 'block', fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                                        Rare — only if this crop is better than the photo on Residents.
+                                    </span>
+                                </span>
+                            </label>
                             <div style={{ display: 'flex', gap: 'var(--s3)', justifyContent: 'flex-end' }}>
                                 <button type="button" className="btn btn-ghost" onClick={() => setAssignTarget(null)}>Cancel</button>
                                 <button type="submit" className="btn btn-primary" disabled={assignSaving || !assignResidentId}>

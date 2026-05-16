@@ -98,7 +98,7 @@ CREATE POLICY "face_label_actions_insert_admin"
 CREATE OR REPLACE FUNCTION public.assign_event_face_to_resident(
   p_event_face_id UUID,
   p_resident_id UUID,
-  p_use_snapshot_for_enrollment BOOLEAN DEFAULT true
+  p_use_snapshot_for_enrollment BOOLEAN DEFAULT false
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -107,8 +107,9 @@ SET search_path = public
 AS $$
 DECLARE
   caller_role TEXT;
-  ef RECORD;
-  ce RECORD;
+  face_row RECORD;
+  cam_row RECORD;
+  cam_found BOOLEAN := false;
   old_profile_id UUID;
 BEGIN
   SELECT role INTO caller_role FROM public.profiles WHERE id = auth.uid();
@@ -116,17 +117,18 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Unauthorized: admin role required');
   END IF;
 
-  SELECT ef.*, ef.unknown_profile_id AS prof_id
-  INTO ef
-  FROM public.event_faces ef
-  WHERE ef.id = p_event_face_id;
+  SELECT evf.*
+  INTO face_row
+  FROM public.event_faces evf
+  WHERE evf.id = p_event_face_id;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('success', false, 'error', 'event_face not found');
   END IF;
 
-  SELECT * INTO ce FROM public.camera_events WHERE id = ef.camera_event_id;
-  old_profile_id := ef.unknown_profile_id;
+  SELECT * INTO cam_row FROM public.camera_events WHERE id = face_row.camera_event_id;
+  cam_found := FOUND;
+  old_profile_id := face_row.unknown_profile_id;
 
   UPDATE public.event_faces
   SET classification = 'resident',
@@ -134,16 +136,16 @@ BEGIN
       unknown_profile_id = NULL
   WHERE id = p_event_face_id;
 
-  IF ce.event_id IS NOT NULL THEN
+  IF cam_found AND cam_row.event_id IS NOT NULL THEN
     UPDATE public.events
     SET event_type = 'resident_entry',
         message = 'Manually identified resident (corrected from unknown).'
-    WHERE id = ce.event_id;
+    WHERE id = cam_row.event_id;
   END IF;
 
-  IF p_use_snapshot_for_enrollment AND ce.snapshot_path IS NOT NULL THEN
+  IF p_use_snapshot_for_enrollment AND cam_found AND cam_row.snapshot_path IS NOT NULL THEN
     UPDATE public.residents
-    SET photo_path = ce.snapshot_path,
+    SET photo_path = cam_row.snapshot_path,
         embedding = NULL
     WHERE id = p_resident_id;
   END IF;
