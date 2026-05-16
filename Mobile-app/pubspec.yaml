@@ -44,6 +44,7 @@ dependencies:
   supabase_flutter: ^2.12.2
   shared_preferences: ^2.3.0
   video_player: ^2.9.2
+  web_socket_channel: ^3.0.2
 
 dev_dependencies:
   flutter_test:

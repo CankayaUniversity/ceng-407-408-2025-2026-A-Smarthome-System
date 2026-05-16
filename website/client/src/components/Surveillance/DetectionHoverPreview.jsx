@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, ShieldOff } from 'lucide-react';
+import { Shield, ShieldOff, Loader } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 const PREVIEW_W = 240;
@@ -17,8 +17,11 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
     if (!event || !anchorRect) return null;
 
     const face = event.event_faces?.[0];
+    const isScanning = event._scanning && !face;
     const isKnown = face?.classification === 'resident';
-    const personName = face?.residents?.name || (isKnown ? 'Authorized Person' : 'Unknown Person');
+    const personName = isScanning
+        ? 'Scanning...'
+        : face?.residents?.name || (isKnown ? 'Authorized Person' : 'Unknown Person');
 
     const node = (
         <div
@@ -84,9 +87,9 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
                             gap: 6,
                             padding: '3px 8px',
                             background: 'rgba(0,0,0,0.55)',
-                            border: `1px solid ${isKnown ? 'rgba(0,229,160,0.4)' : 'rgba(255,59,92,0.4)'}`,
+                            border: `1px solid ${isScanning ? 'rgba(245,158,11,0.4)' : isKnown ? 'rgba(0,229,160,0.4)' : 'rgba(255,59,92,0.4)'}`,
                             borderRadius: 'var(--r-full)',
-                            color: isKnown ? '#00e5a0' : '#ff3b5c',
+                            color: isScanning ? '#f59e0b' : isKnown ? '#00e5a0' : '#ff3b5c',
                             fontSize: 10,
                             fontWeight: 700,
                             letterSpacing: '0.06em',
@@ -94,8 +97,8 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
                             backdropFilter: 'blur(6px)',
                         }}
                     >
-                        {isKnown ? <Shield size={11} /> : <ShieldOff size={11} />}
-                        {isKnown ? 'Resident' : 'Unknown'}
+                        {isScanning ? <Loader size={11} className="spin-icon" /> : isKnown ? <Shield size={11} /> : <ShieldOff size={11} />}
+                        {isScanning ? 'Scanning' : isKnown ? 'Resident' : 'Unknown'}
                     </div>
                 </div>
                 <div style={{ padding: 'var(--s3) var(--s4)' }}>
@@ -123,6 +126,8 @@ const DetectionHoverPreview = ({ event, anchorRect, snapshotUrl }) => {
                     from { opacity: 0; transform: translateY(4px) scale(0.98); }
                     to   { opacity: 1; transform: translateY(0) scale(1); }
                 }
+                .spin-icon { animation: spin 1.2s linear infinite; }
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             `}</style>
         </div>
     );

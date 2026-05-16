@@ -5,6 +5,7 @@ opencv-python
 numpy
 face_recognition
 requests
+websocket-client>=1.6.0
 # mediapipe  # optional: ARM'de yok, face_recognition fallback kullanilir
 adafruit-circuitpython-dht
 adafruit-blinka

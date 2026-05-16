@@ -9,6 +9,7 @@ import 'security_alert_screen.dart';
 import 'theme/app_theme.dart';
 import 'widgets/mjpeg_view.dart';
 import 'widgets/hls_player.dart';
+import 'widgets/websocket_live_view.dart';
 
 enum FeedMode { live, snapshot }
 
@@ -404,12 +405,25 @@ class _FeedCard extends StatelessWidget {
   }
 
   Widget _liveContent(AppTokens tokens) {
+    // WebSocket relay URL — pass via --dart-define=RELAY_WS_URL=ws://...
+    // Falls back to the cloud relay server default.
+    const relayUrl = String.fromEnvironment(
+      'RELAY_WS_URL',
+      defaultValue: 'ws://92.5.17.205:8080',
+    );
+
+    // Prefer WebSocket live view when the relay URL is available
+    if (relayUrl.isNotEmpty) {
+      return WebSocketLiveView(url: relayUrl);
+    }
+
+    // Fallback to legacy MJPEG / HLS if configured
     if (!hasLiveStream) {
       return _empty(
         tokens,
         Icons.signal_wifi_off,
         'No live stream configured',
-        'Build with --dart-define=CAMERA_STREAM_URL=...',
+        'Build with --dart-define=RELAY_WS_URL=ws://... or --dart-define=CAMERA_STREAM_URL=...',
       );
     }
     if (SupabaseConfig.cameraStreamType.toLowerCase() == 'hls') {
