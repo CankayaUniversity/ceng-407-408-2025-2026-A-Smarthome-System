@@ -10,6 +10,7 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 
@@ -43,6 +44,21 @@ logging.basicConfig(
 logger = logging.getLogger("smart_home_cloud")
 
 app = FastAPI(title="Smart Home Cloud API")
+
+# Browser calls from Vite (website/client) need CORS when gateway is on Pi/LAN.
+_cors_raw = os.getenv(
+    "GATEWAY_CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173",
+)
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
@@ -344,6 +360,34 @@ def trigger_resident_embedding_backfill(device_id: str = Query(...)):
         raise
     except Exception as e:
         logger.exception("Manual embedding backfill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/unknown/backfill-clustering")
+def trigger_unknown_clustering_backfill(
+    device_id: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """
+    Group unclustered unknown detections into Unknown visitor profiles.
+    Use after upgrading gateway, or from Identity Review in the web UI.
+
+    Pi: curl -X POST "http://127.0.0.1:8000/api/v1/unknown/backfill-clustering?device_id=YOUR_DEVICE_UUID&limit=50"
+    """
+    try:
+        ensure_device_exists(device_id)
+        from app.services.unknown_clustering import run_unknown_clustering_backfill
+
+        summary = run_unknown_clustering_backfill(
+            supabase,
+            snapshot_bucket=SNAPSHOT_BUCKET,
+            limit=limit,
+        )
+        return {"status": "ok", **summary}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unknown clustering backfill failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

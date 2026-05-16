@@ -162,3 +162,85 @@ def cluster_unknown_detection(
         "match_distance": None,
         "created": True,
     }
+
+
+def run_unknown_clustering_backfill(
+    supabase,
+    *,
+    snapshot_bucket: str,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """
+    Cluster existing unknown event_faces that have no unknown_profile_id yet
+    (e.g. uploaded before gateway had clustering). Downloads each snapshot,
+    computes embedding, merges into profiles — same logic as live upload.
+    """
+    from app.vision.embedder import FaceEmbedder
+
+    summary: dict[str, Any] = {
+        "candidates": 0,
+        "clustered_ok": 0,
+        "skipped_no_snapshot": 0,
+        "failed_download": 0,
+        "failed_cluster": 0,
+        "profiles_created": 0,
+        "profiles_merged": 0,
+    }
+
+    rows = (
+        supabase.table("event_faces")
+        .select("id, camera_event_id, camera_events(snapshot_path, created_at)")
+        .eq("classification", "unknown")
+        .is_("unknown_profile_id", "null")
+        .limit(max(1, min(limit, 200)))
+        .execute()
+        .data
+        or []
+    )
+
+    def _sort_key(row: dict) -> str:
+        cam = row.get("camera_events") or {}
+        return cam.get("created_at") or ""
+
+    rows.sort(key=_sort_key)
+    summary["candidates"] = len(rows)
+
+    embedder = FaceEmbedder()
+
+    for row in rows:
+        face_id = row["id"]
+        cam = row.get("camera_events") or {}
+        snapshot_path = cam.get("snapshot_path")
+        camera_event_id = row.get("camera_event_id")
+
+        if not snapshot_path or not camera_event_id:
+            summary["skipped_no_snapshot"] += 1
+            continue
+
+        try:
+            file_bytes = supabase.storage.from_(snapshot_bucket).download(snapshot_path)
+        except Exception as exc:
+            summary["failed_download"] += 1
+            logger.warning("Backfill download failed (%s): %s", snapshot_path, exc)
+            continue
+
+        result = cluster_unknown_detection(
+            supabase,
+            embedder,
+            file_bytes,
+            face_id,
+            camera_event_id,
+            snapshot_path,
+        )
+        if not result:
+            summary["failed_cluster"] += 1
+            continue
+
+        summary["clustered_ok"] += 1
+        if result.get("created"):
+            summary["profiles_created"] += 1
+        else:
+            summary["profiles_merged"] += 1
+
+    logger.info("Unknown clustering backfill: %s", summary)
+    return summary

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
     UserSearch, Users, RefreshCw, ChevronRight, AlertTriangle,
     CheckCircle, X, UserPlus, Camera, Clock, Hash, History,
-    Undo2, Unlink, ImageIcon,
+    Undo2, Unlink, ImageIcon, Layers,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { supabase, getPublicUrl } from '../services/supabase';
@@ -44,6 +44,8 @@ const IdentityPage = () => {
     const [galleryResidentId, setGalleryResidentId] = useState('');
     const [residentDetections, setResidentDetections] = useState([]);
     const [galleryLoading, setGalleryLoading] = useState(false);
+    const [clusterBackfillSaving, setClusterBackfillSaving] = useState(false);
+    const [clusterStatus, setClusterStatus] = useState(null);
     const [toast, setToast] = useState(null);
 
     const showToast = (msg, type = 'success') => {
@@ -180,6 +182,15 @@ const IdentityPage = () => {
         });
     }, [recentUnknowns]);
 
+    const unclusteredCount = useMemo(
+        () => recentUnknowns.filter(f => !f.unknown_profile_id).length,
+        [recentUnknowns],
+    );
+
+    const canClusterViaGateway = Boolean(
+        import.meta.env.VITE_GATEWAY_URL && import.meta.env.VITE_DEVICE_ID,
+    );
+
     const triggerBackfillIfNeeded = async (useEnrollment) => {
         if (!useEnrollment) return;
         const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
@@ -253,6 +264,61 @@ const IdentityPage = () => {
         showToast('Assignment reverted. Detection is unknown again.');
         await loadAll();
         if (galleryResidentId) await loadResidentDetections(galleryResidentId);
+    };
+
+    const handleClusterBackfill = async () => {
+        const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
+        const deviceId = import.meta.env.VITE_DEVICE_ID;
+        if (!gatewayUrl || !deviceId) {
+            const msg = 'Add VITE_GATEWAY_URL and VITE_DEVICE_ID to website/client/.env, then restart npm run dev.';
+            setClusterStatus({ type: 'error', msg });
+            showToast(msg, 'error');
+            return;
+        }
+        setClusterBackfillSaving(true);
+        setClusterStatus({ type: 'loading', msg: `Calling gateway at ${gatewayUrl}…` });
+        const url = `${gatewayUrl.replace(/\/$/, '')}/api/v1/unknown/backfill-clustering?device_id=${deviceId}&limit=50`;
+        try {
+            const res = await fetch(url, { method: 'POST' });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detail = typeof body.detail === 'string'
+                    ? body.detail
+                    : JSON.stringify(body.detail || body.error || body);
+                const msg = res.status === 404
+                    ? `Gateway endpoint not found (404). Pull latest code on the Pi and restart uvicorn. (${detail})`
+                    : `Gateway error ${res.status}: ${detail}`;
+                setClusterStatus({ type: 'error', msg });
+                showToast(msg, 'error');
+                return;
+            }
+            const ok = body.clustered_ok ?? 0;
+            const created = body.profiles_created ?? 0;
+            const candidates = body.candidates ?? 0;
+            if (ok > 0) {
+                const msg = `Grouped ${ok} of ${candidates} detection(s) (${created} new profile(s)). Refresh complete.`;
+                setClusterStatus({ type: 'success', msg });
+                showToast(msg);
+            } else {
+                const msg = candidates > 0
+                    ? `Found ${candidates} photo(s) but could not cluster (face/embedding failed on Pi). Check uvicorn logs.`
+                    : 'No ungrouped unknown detections left to cluster.';
+                setClusterStatus({ type: 'error', msg });
+                showToast(msg, 'error');
+            }
+            await loadAll();
+        } catch (err) {
+            const isLocalhost = /localhost|127\.0\.0\.1/.test(gatewayUrl);
+            const hint = isLocalhost
+                ? ' Site runs on your laptop but gateway is usually on the Pi — set VITE_GATEWAY_URL=http://PI_LAN_IP:8000'
+                : ' Check Pi is on, uvicorn is running, and port 8000 is reachable from this PC.';
+            const msg = `${err.message || 'Could not reach gateway'}.${hint}`;
+            setClusterStatus({ type: 'error', msg });
+            showToast(msg, 'error');
+            console.error('Cluster backfill failed:', url, err);
+        } finally {
+            setClusterBackfillSaving(false);
+        }
     };
 
     const handleUnlink = async (eventFaceId) => {
@@ -541,13 +607,56 @@ const IdentityPage = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 'var(--s5)', alignItems: 'start' }}>
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                     <div style={{ padding: 'var(--s4) var(--s5)', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-raised)' }}>
-                        <div style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Unknown visitors</div>
-                        <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)' }}>{profiles.length} active profile{profiles.length !== 1 ? 's' : ''}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--s3)' }}>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Unknown visitors</div>
+                                <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)' }}>
+                                    {profiles.length} active profile{profiles.length !== 1 ? 's' : ''}
+                                    {unclusteredCount > 0 && ` · ${unclusteredCount} ungrouped below`}
+                                </div>
+                            </div>
+                            {isAdmin && (unclusteredCount > 0 || profiles.length === 0) && (
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={clusterBackfillSaving || !canClusterViaGateway}
+                                    onClick={handleClusterBackfill}
+                                    title={canClusterViaGateway ? 'Group recent unknown photos by face similarity' : 'Set VITE_GATEWAY_URL and VITE_DEVICE_ID'}
+                                    style={{ fontSize: 10, whiteSpace: 'nowrap', color: 'var(--violet-core)' }}
+                                >
+                                    {clusterBackfillSaving
+                                        ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                                        : <><Layers size={12} /> Group photos</>}
+                                </button>
+                            )}
+                        </div>
+                        {clusterStatus && (
+                            <p style={{
+                                marginTop: 'var(--s3)',
+                                fontSize: 'var(--size-xxs)',
+                                lineHeight: 1.45,
+                                color: clusterStatus.type === 'success'
+                                    ? 'var(--jade-core)'
+                                    : clusterStatus.type === 'loading'
+                                        ? 'var(--cyan-core)'
+                                        : 'var(--crimson-core)',
+                            }}>
+                                {clusterStatus.msg}
+                            </p>
+                        )}
+                        {isAdmin && canClusterViaGateway && /localhost|127\.0\.0\.1/.test(import.meta.env.VITE_GATEWAY_URL || '') && (
+                            <p style={{ marginTop: 6, fontSize: 10, color: 'var(--amber-core)', lineHeight: 1.4 }}>
+                                Gateway URL is localhost — use the Pi IP in .env if the site runs on your laptop.
+                            </p>
+                        )}
                     </div>
                     <div style={{ maxHeight: 520, overflowY: 'auto' }}>
                         {profiles.length === 0 ? (
                             <div className="empty-state" style={{ padding: 'var(--s8)' }}>
-                                <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)' }}>No clustered unknown profiles yet.</p>
+                                <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                                    No clustered profiles yet. Detections below are ungrouped until the gateway clusters them
+                                    (new uploads automatically, or use <strong>Group photos</strong>).
+                                </p>
                             </div>
                         ) : profiles.map(p => {
                             const thumb = p.representative_snapshot_path
