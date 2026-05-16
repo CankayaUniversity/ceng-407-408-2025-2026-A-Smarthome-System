@@ -122,7 +122,7 @@ export default function UnknownProfilePanel({
                 <div style={{ flex: 1, minWidth: 200 }}>
                     <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-xl)', fontWeight: 700, marginBottom: 'var(--s2)' }}>
                         {displayName}
-                    </div>
+                    </h2>
                     {profile.display_label && profile.display_label !== displayName && (
                         <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)', marginBottom: 'var(--s2)' }}>
                             Stored: {profile.display_label}
