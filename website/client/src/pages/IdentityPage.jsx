@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
     UserSearch, Users, RefreshCw, ChevronRight, AlertTriangle,
     CheckCircle, X, UserPlus, Camera, Clock, Hash, History,
-    Undo2, Unlink, ImageIcon, Layers,
+    Undo2, Unlink, ImageIcon, Layers, Pencil, GitMerge, Archive, ArrowRightLeft,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { supabase, getPublicUrl } from '../services/supabase';
@@ -25,11 +25,20 @@ const EVENT_FACE_SELECT = `
 
 const ACTION_SELECT = `
   id, action, created_at, metadata, event_face_id, to_resident_id, from_unknown_profile_id,
-  event_faces(
-    id, classification, resident_id,
-    camera_events(id, snapshot_path, created_at)
-  )
+  event_faces(id, camera_events(snapshot_path)),
+  from_profile:unknown_face_profiles!from_unknown_profile_id(id, representative_snapshot_path),
+  to_resident:residents!to_resident_id(id, name, photo_path)
 `;
+
+const ACTION_ICONS = {
+    assign_resident: Users,
+    revert_assign: Undo2,
+    unlink_from_resident: Unlink,
+    merge_profiles: GitMerge,
+    rename_profile: Pencil,
+    move_sighting: ArrowRightLeft,
+    dismiss_profile: Archive,
+};
 
 const IdentityPage = () => {
     const { isAdmin } = useAuth();
@@ -83,7 +92,7 @@ const IdentityPage = () => {
             .select(ACTION_SELECT)
             .in('action', ['assign_resident', 'revert_assign', 'unlink_from_resident', 'merge_profiles', 'rename_profile', 'move_sighting', 'dismiss_profile'])
             .order('created_at', { ascending: false })
-            .limit(40);
+            .limit(16);
         setRecentActions(data || []);
     }, []);
 
@@ -391,9 +400,31 @@ const IdentityPage = () => {
         return action.action;
     };
 
-    const actionSnapshotPath = (action) =>
-        action.metadata?.snapshot_path
-        || action.event_faces?.camera_events?.snapshot_path;
+    const profileSnapshotById = useMemo(() => {
+        const m = new Map();
+        profiles.forEach(p => {
+            if (p.representative_snapshot_path) m.set(p.id, p.representative_snapshot_path);
+        });
+        return m;
+    }, [profiles]);
+
+    const actionSnapshotPath = (action) => {
+        const meta = action.metadata || {};
+        const eventSnap = action.event_faces?.camera_events?.snapshot_path;
+        if (eventSnap) return eventSnap;
+        if (meta.snapshot_path) return meta.snapshot_path;
+        if (action.from_profile?.representative_snapshot_path) {
+            return action.from_profile.representative_snapshot_path;
+        }
+        if (meta.target_profile_id && profileSnapshotById.has(meta.target_profile_id)) {
+            return profileSnapshotById.get(meta.target_profile_id);
+        }
+        if (action.from_unknown_profile_id && profileSnapshotById.has(action.from_unknown_profile_id)) {
+            return profileSnapshotById.get(action.from_unknown_profile_id);
+        }
+        if (action.to_resident?.photo_path) return action.to_resident.photo_path;
+        return null;
+    };
 
     if (loading) {
         return (
@@ -449,64 +480,91 @@ const IdentityPage = () => {
             )}
 
             {isAdmin && recentActions.length > 0 && (
-                <div className="card" style={{ marginBottom: 'var(--s5)', padding: 0, overflow: 'hidden' }}>
-                    <div style={{ padding: 'var(--s4) var(--s5)', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-raised)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="card" style={{ marginBottom: 'var(--s5)', padding: 'var(--s4) var(--s5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s3)' }}>
                         <History size={16} style={{ color: 'var(--cyan-core)' }} />
                         <span style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Recent manual corrections</span>
+                        <span style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>{recentActions.length}</span>
                     </div>
-                    <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                        gap: 'var(--s3)',
+                        maxHeight: 220,
+                        overflowY: 'auto',
+                    }}>
                         {recentActions.map(action => {
                             const snap = actionSnapshotPath(action);
                             const url = snap ? getPublicUrl('event-snapshots', snap) : null;
                             const canRevert = action.action === 'assign_resident' && !revertedActionIds.has(action.id);
                             const isReverted = action.action === 'assign_resident' && revertedActionIds.has(action.id);
+                            const ActionIcon = ACTION_ICONS[action.action] || History;
                             return (
                                 <div
                                     key={action.id}
                                     style={{
-                                        display: 'flex', alignItems: 'center', gap: 'var(--s3)',
-                                        padding: 'var(--s3) var(--s5)', borderBottom: '1px solid var(--border-dim)',
-                                        opacity: isReverted ? 0.55 : 1,
+                                        display: 'flex',
+                                        gap: 'var(--s3)',
+                                        padding: 'var(--s3)',
+                                        borderRadius: 'var(--r-lg)',
+                                        border: '1px solid var(--border-soft)',
+                                        background: 'var(--bg-raised)',
+                                        opacity: isReverted ? 0.6 : 1,
                                     }}
                                 >
-                                    <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-base)' }}>
-                                        {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                    <div style={{
+                                        width: 48, height: 48, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0,
+                                        background: url ? '#0a0c10' : 'linear-gradient(135deg, rgba(155,89,255,0.15), rgba(0,229,160,0.08))',
+                                        border: '1px solid var(--border-dim)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                        {url ? (
+                                            <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <ActionIcon size={18} style={{ color: 'var(--violet-core)', opacity: 0.85 }} />
+                                        )}
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 'var(--size-sm)' }}>{actionLabel(action)}</div>
-                                        <div style={{ fontSize: 'var(--size-xxs)', color: 'var(--text-muted)' }}>
+                                        <div style={{
+                                            fontWeight: 600, fontSize: 'var(--size-xs)', lineHeight: 1.35,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        }}>
+                                            {actionLabel(action)}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
                                             {action.created_at
                                                 ? formatDistanceToNow(new Date(action.created_at), { addSuffix: true })
                                                 : '—'}
-                                            {action.metadata?.enrollment_updated && ' · enrollment photo updated'}
+                                            {action.metadata?.enrollment_updated && ' · enrollment updated'}
                                             {isReverted && ' · reverted'}
                                         </div>
+                                        {(canRevert || action.event_face_id) && (
+                                            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                                                {canRevert && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-ghost btn-sm"
+                                                        disabled={revertSavingId === action.id}
+                                                        onClick={() => handleRevert(action.id)}
+                                                        style={{ fontSize: 10, padding: '2px 6px', color: 'var(--amber-core)' }}
+                                                    >
+                                                        {revertSavingId === action.id ? '…' : 'Revert'}
+                                                    </button>
+                                                )}
+                                                {action.event_face_id && (
+                                                    <Link to="/camera" className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 6px' }}>
+                                                        Camera
+                                                    </Link>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                    {canRevert && (
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-sm"
-                                            disabled={revertSavingId === action.id}
-                                            onClick={() => handleRevert(action.id)}
-                                            style={{ color: 'var(--amber-core)' }}
-                                        >
-                                            {revertSavingId === action.id
-                                                ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                                                : <><Undo2 size={13} /> Revert</>}
-                                        </button>
-                                    )}
-                                    {action.event_face_id && (
-                                        <Link to="/camera" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
-                                            <Camera size={12} />
-                                        </Link>
-                                    )}
                                 </div>
                             );
                         })}
                     </div>
                 </div>
             )}
-
             {isAdmin && (
                 <div className="card" style={{ marginBottom: 'var(--s5)', padding: 'var(--s5)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s4)' }}>
