@@ -6,8 +6,11 @@ import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/Layout/ProtectedRoute';
 import Layout from './components/Layout/Layout';
 import ChangePasswordModal from './components/ChangePasswordModal';
+import PasswordRecoveryRedirect from './components/PasswordRecoveryRedirect';
 
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import UpdatePasswordPage from './pages/UpdatePasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import HistoryPage from './pages/HistoryPage';
 import CameraPage from './pages/CameraPage';
@@ -23,8 +26,8 @@ import { useAuth } from './hooks/useAuth';
  * Must be inside AuthProvider but outside individual pages.
  */
 function GlobalOverlays() {
-    const { forcePasswordChange, isAuthenticated } = useAuth();
-    if (isAuthenticated && forcePasswordChange) {
+    const { forcePasswordChange, isAuthenticated, isPasswordRecovery } = useAuth();
+    if (isAuthenticated && forcePasswordChange && !isPasswordRecovery) {
         return <ChangePasswordModal />;
     }
     return null;
@@ -36,11 +39,13 @@ function App() {
             <AuthProvider>
                 <RealtimeProvider>
                     <BrowserRouter>
-                        {/* Global overlay — shown on top of any page when needed */}
+                        <PasswordRecoveryRedirect />
                         <GlobalOverlays />
 
                         <Routes>
                             <Route path="/login" element={<LoginPage />} />
+                            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                            <Route path="/update-password" element={<UpdatePasswordPage />} />
                             <Route element={<ProtectedRoute />}>
                                 <Route element={<Layout />}>
                                     <Route path="/" element={<Navigate to="/dashboard" replace />} />

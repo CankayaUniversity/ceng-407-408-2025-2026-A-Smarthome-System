@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard,
@@ -9,8 +10,10 @@ import {
     LogOut,
     Zap,
     Map,
+    Home,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabase';
 
 const NAV_ITEMS = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -25,6 +28,19 @@ const NAV_ITEMS = [
 
 const Sidebar = () => {
     const { logout, user, profile } = useAuth();
+    const [householdName, setHouseholdName] = useState(null);
+
+    const loadHousehold = () => {
+        supabase.from('household_settings').select('name').eq('id', 1).maybeSingle()
+            .then(({ data }) => { if (data?.name) setHouseholdName(data.name); });
+    };
+
+    useEffect(() => {
+        loadHousehold();
+        const onUpdate = () => loadHousehold();
+        window.addEventListener('household-updated', onUpdate);
+        return () => window.removeEventListener('household-updated', onUpdate);
+    }, []);
 
     // Safe avatar initial: prefer profile name, fall back to email, then 'U'
     const displayName = profile?.name || user?.user_metadata?.name || '';
@@ -44,6 +60,16 @@ const Sidebar = () => {
                 <div>
                     <div className="sidebar-logo-text">SmartHome</div>
                     <div className="sidebar-logo-sub">Intelligence OS</div>
+                    {householdName && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            marginTop: 6, fontSize: 'var(--size-xxs)', color: 'var(--text-muted)',
+                            fontWeight: 500, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }} title={householdName}>
+                            <Home size={11} style={{ flexShrink: 0, color: 'var(--ember-core)' }} />
+                            {householdName}
+                        </div>
+                    )}
                 </div>
             </div>
 

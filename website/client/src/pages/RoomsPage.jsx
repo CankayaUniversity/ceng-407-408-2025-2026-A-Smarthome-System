@@ -7,6 +7,7 @@ import {
     UtensilsCrossed, BedDouble, Lock, ShowerHead, Flower2, MapPin
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useAuth } from '../hooks/useAuth';
 
 const ROOMS = [
     { id: 'living', label: 'Living Room', Icon: Sofa, color: '#7c6fff', left: 2, top: 2, w: 36, h: 45 },
@@ -69,7 +70,7 @@ function SensorPin({ sensor, pos, onClick }) {
     );
 }
 
-function DeviceCard({ device, sensors, onAssign, pending, errMsg }) {
+function DeviceCard({ device, sensors, onAssign, pending, errMsg, canAssignRoom }) {
     const currentRoom = resolveRoom(device);
     const sortedSensors = [...sensors].sort((a, b) => (a.sensor_type || '').localeCompare(b.sensor_type || ''));
 
@@ -126,18 +127,26 @@ function DeviceCard({ device, sensors, onAssign, pending, errMsg }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s2)' }}>
                 <MapPin size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Room</span>
-                <select
-                    className="form-input"
-                    value={currentRoom}
-                    disabled={pending || !device?.id}
-                    onChange={e => onAssign(device.id, e.target.value)}
-                    style={{ flex: 1, padding: '6px var(--s3)', fontSize: 12, background: 'var(--bg-surface)' }}
-                >
-                    {ROOMS.map(r => (
-                        <option key={r.id} value={r.id}>{r.label}</option>
-                    ))}
-                </select>
-                {pending && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Saving…</span>}
+                {canAssignRoom ? (
+                    <>
+                        <select
+                            className="form-input"
+                            value={currentRoom}
+                            disabled={pending || !device?.id}
+                            onChange={e => onAssign(device.id, e.target.value)}
+                            style={{ flex: 1, padding: '6px var(--s3)', fontSize: 12, background: 'var(--bg-surface)' }}
+                        >
+                            {ROOMS.map(r => (
+                                <option key={r.id} value={r.id}>{r.label}</option>
+                            ))}
+                        </select>
+                        {pending && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Saving…</span>}
+                    </>
+                ) : (
+                    <span style={{ flex: 1, fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        {ROOMS.find(r => r.id === currentRoom)?.label || currentRoom}
+                    </span>
+                )}
             </div>
 
             {errMsg && (
@@ -147,7 +156,7 @@ function DeviceCard({ device, sensors, onAssign, pending, errMsg }) {
     );
 }
 
-function RoomDrawer({ room, deviceGroups, onClose, onAssignDevice }) {
+function RoomDrawer({ room, deviceGroups, onClose, onAssignDevice, canAssignRoom }) {
     const navigate = useNavigate();
     const { Icon, label, color } = room;
     const [pendingByDevice, setPendingByDevice] = useState({});
@@ -208,7 +217,7 @@ function RoomDrawer({ room, deviceGroups, onClose, onAssignDevice }) {
                     {deviceGroups.length === 0 ? (
                         <div className="empty-state" style={{ padding: 'var(--s8) var(--s4)' }}>
                             <h3>No devices here yet</h3>
-                            <p>Move a device into this room from another room&apos;s panel.</p>
+                            <p>{canAssignRoom ? 'Move a device into this room from another room\'s panel.' : 'Device room assignments are managed by administrators.'}</p>
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s3)' }}>
@@ -220,6 +229,7 @@ function RoomDrawer({ room, deviceGroups, onClose, onAssignDevice }) {
                                     onAssign={handleAssign}
                                     pending={!!pendingByDevice[group.deviceId]}
                                     errMsg={errorByDevice[group.deviceId]}
+                                    canAssignRoom={canAssignRoom}
                                 />
                             ))}
                         </div>
@@ -232,6 +242,7 @@ function RoomDrawer({ room, deviceGroups, onClose, onAssignDevice }) {
 }
 
 const RoomsPage = () => {
+    const { isAdmin } = useAuth();
     const [sensors, setSensors] = useState([]);
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -299,6 +310,9 @@ const RoomsPage = () => {
     }, [sensors, devicesById]);
 
     const assignDevice = useCallback(async (deviceId, nextRoom) => {
+        if (!isAdmin) {
+            return { ok: false, error: 'Only administrators can reassign devices.' };
+        }
         if (!deviceId || !ROOM_IDS.includes(nextRoom)) {
             return { ok: false, error: 'Invalid room' };
         }
@@ -314,7 +328,7 @@ const RoomsPage = () => {
             return { ok: false, error: error.message };
         }
         return { ok: true };
-    }, [devices]);
+    }, [devices, isAdmin]);
 
     const drawerRoom = ROOMS.find(r => r.id === openRoom);
     const drawerGroups = openRoom ? (deviceGroupsByRoom[openRoom] || []) : [];
@@ -326,7 +340,10 @@ const RoomsPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--s6)' }}>
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Floor Plan</h1>
-                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s1)' }}>Interactive home blueprint · Live sensor telemetry · Reassign devices by room</p>
+                    <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginTop: 'var(--s1)' }}>
+                        Interactive home blueprint · Live sensor telemetry
+                        {isAdmin ? ' · Reassign devices by room' : ' · View-only for residents'}
+                    </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--size-xs)', color: 'var(--text-primary)', background: 'var(--bg-surface)', border: '1px solid var(--border-soft)', borderRadius: 'var(--r-full)', padding: '6px 14px', fontWeight: 600 }}>
                     <CheckCircle2 size={14} style={{ color: 'var(--jade-core)' }} />
@@ -396,6 +413,7 @@ const RoomsPage = () => {
                     deviceGroups={drawerGroups}
                     onClose={() => setOpenRoom(null)}
                     onAssignDevice={assignDevice}
+                    canAssignRoom={isAdmin}
                 />
             )}
 

@@ -128,6 +128,10 @@ const ResidentsPage = () => {
 
     const handleAdd = async (e) => {
         e.preventDefault();
+        if (!isAdmin) {
+            setError('Only administrators can add residents.');
+            return;
+        }
         if (!formName.trim()) return;
         if (!user?.id) {
             setError('You must be signed in to add a resident.');
@@ -152,14 +156,13 @@ const ResidentsPage = () => {
             }
 
             const { data, error: insertErr } = await supabase.from('residents').insert({
-                user_id: user.id,
+                user_id: null,
                 name: formName.trim(),
                 photo_path: photoPath,
                 account_email: (createAccount && accountEmail.trim()) ? accountEmail.trim() : null,
             }).select().single();
 
             if (insertErr) throw insertErr;
-            setResidents(prev => [{ ...data, account_email: data.account_email }, ...prev]);
 
             // Create auth account if requested
             if (createAccount && accountEmail.trim()) {
@@ -169,9 +172,16 @@ const ResidentsPage = () => {
                     setSaving(false);
                     return;
                 }
+                const { data: updated } = await supabase.from('residents')
+                    .update({ account_email: accountEmail.trim(), auth_user_id: result.userId })
+                    .eq('id', data.id)
+                    .select()
+                    .single();
+                setResidents(prev => [{ ...(updated || { ...data, account_email: accountEmail.trim(), auth_user_id: result.userId }), resident_faces: [] }, ...prev]);
                 resetModal();
                 setEmailSent({ name: formName.trim(), email: accountEmail.trim() });
             } else {
+                setResidents(prev => [{ ...data, resident_faces: [] }, ...prev]);
                 resetModal();
             }
         } catch (err) {
@@ -227,6 +237,7 @@ const ResidentsPage = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!isAdmin) return;
         if (!confirm('Remove this resident?')) return;
         await supabase.from('residents').delete().eq('id', id);
         setResidents(prev => prev.filter(r => r.id !== id));
@@ -247,7 +258,9 @@ const ResidentsPage = () => {
                     <button type="button" className="btn btn-ghost" onClick={handleRefreshList} disabled={refreshing || loading} title="Reload rows from Supabase">
                         {refreshing ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <><RefreshCw size={16} /> Refresh</>}
                     </button>
-                    <button className="btn btn-primary" onClick={() => setShowModal(true)}><UserPlus size={16} /> Add Resident</button>
+                    {isAdmin && (
+                        <button className="btn btn-primary" onClick={() => setShowModal(true)}><UserPlus size={16} /> Add Resident</button>
+                    )}
                 </div>
             </div>
 
@@ -258,7 +271,9 @@ const ResidentsPage = () => {
                     <div className="empty-state-icon"><Users size={48} /></div>
                     <h3>No Face Profiles</h3>
                     <p>Add residents to enable AI face recognition at your front door.</p>
-                    <button className="btn btn-primary" onClick={() => setShowModal(true)} style={{ marginTop: 'var(--s5)' }}><UserPlus size={15} /> Add first resident</button>
+                    {isAdmin && (
+                        <button className="btn btn-primary" onClick={() => setShowModal(true)} style={{ marginTop: 'var(--s5)' }}><UserPlus size={15} /> Add first resident</button>
+                    )}
                 </div>
             ) : (
                 <div className="grid grid-3">
@@ -336,7 +351,9 @@ const ResidentsPage = () => {
                                             <CheckCircle size={11} /> Linked
                                         </div>
                                     )}
-                                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(r.id)}><Trash2 size={13} /></button>
+                                    {isAdmin && (
+                                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(r.id)}><Trash2 size={13} /></button>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -383,10 +400,10 @@ const ResidentsPage = () => {
                                         />
                                         <div>
                                             <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                Create a system account for this resident
+                                                Create a login account for this resident
                                             </div>
                                             <div style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
-                                                A login account will be created and credentials shared with you
+                                                An email invite will be sent so they can set their own password
                                             </div>
                                         </div>
                                     </label>
@@ -448,7 +465,7 @@ const ResidentsPage = () => {
                             <button className="modal-close" onClick={() => setCreateAccountTarget(null)}><X size={20} /></button>
                         </div>
                         <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--s5)', lineHeight: 1.6 }}>
-                            A login account will be created for this resident. They will receive a temporary password and be required to change it on first login.
+                            A login account will be created for this resident. They will receive an email with a secure link to set their own password — you will never see or set their password.
                         </p>
                         {createAccountError && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{createAccountError}</div>}
                         <form
@@ -463,13 +480,15 @@ const ResidentsPage = () => {
                                     setCreateAccountSaving(false);
                                     return;
                                 }
-                                // Save email to resident row
                                 await supabase.from('residents')
-                                    .update({ account_email: createAccountEmail.trim() })
+                                    .update({
+                                        account_email: createAccountEmail.trim(),
+                                        auth_user_id: result.userId,
+                                    })
                                     .eq('id', createAccountTarget.id);
                                 setResidents(prev => prev.map(r =>
                                     r.id === createAccountTarget.id
-                                        ? { ...r, account_email: createAccountEmail.trim() }
+                                        ? { ...r, account_email: createAccountEmail.trim(), auth_user_id: result.userId }
                                         : r
                                 ));
                                 setCreateAccountTarget(null);

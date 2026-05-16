@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Key, Save, CheckCircle, Palette, Users, Trash2, ShieldAlert } from 'lucide-react';
+import { Database, Key, Save, CheckCircle, Palette, Trash2, ShieldAlert, Lock, Eye, EyeOff, Home } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../context/ThemeContext';
@@ -35,10 +35,26 @@ function FieldRow({ label, desc, children }) {
 }
 
 const SettingsPage = () => {
-    const { profile, user, isAdmin, deleteAuthUser } = useAuth();
+    const { profile, user, isAdmin, deleteAuthUser, changePasswordWithVerification } = useAuth();
     const { theme } = useTheme();
     const [saved, setSaved] = useState(false);
     const [nameVal, setNameVal] = useState(profile?.name || '');
+
+    // Password change
+    const [currentPw, setCurrentPw] = useState('');
+    const [newPw, setNewPw] = useState('');
+    const [confirmPw, setConfirmPw] = useState('');
+    const [showCurrentPw, setShowCurrentPw] = useState(false);
+    const [showNewPw, setShowNewPw] = useState(false);
+    const [pwSaving, setPwSaving] = useState(false);
+    const [pwError, setPwError] = useState(null);
+    const [pwSuccess, setPwSuccess] = useState(false);
+
+    // Household (admin)
+    const [householdName, setHouseholdName] = useState('');
+    const [householdAddress, setHouseholdAddress] = useState('');
+    const [householdSaving, setHouseholdSaving] = useState(false);
+    const [householdSaved, setHouseholdSaved] = useState(false);
 
     // Admin: all users list
     const [allProfiles, setAllProfiles] = useState([]);
@@ -52,6 +68,48 @@ const SettingsPage = () => {
         supabase.from('profiles').select('*').order('created_at', { ascending: true })
             .then(({ data }) => { setAllProfiles(data || []); setLoadingProfiles(false); });
     }, [isAdmin]);
+
+    useEffect(() => {
+        supabase.from('household_settings').select('name, address').eq('id', 1).maybeSingle()
+            .then(({ data }) => {
+                if (data) {
+                    setHouseholdName(data.name || '');
+                    setHouseholdAddress(data.address || '');
+                }
+            });
+    }, []);
+
+    const handlePasswordChange = async (e) => {
+        e.preventDefault();
+        setPwError(null);
+        setPwSuccess(false);
+        if (newPw.length < 8) { setPwError('New password must be at least 8 characters.'); return; }
+        if (newPw !== confirmPw) { setPwError('New passwords do not match.'); return; }
+        setPwSaving(true);
+        const result = await changePasswordWithVerification(currentPw, newPw);
+        setPwSaving(false);
+        if (result.success) {
+            setPwSuccess(true);
+            setCurrentPw(''); setNewPw(''); setConfirmPw('');
+            setTimeout(() => setPwSuccess(false), 3000);
+        } else {
+            setPwError(result.error || 'Failed to update password.');
+        }
+    };
+
+    const handleHouseholdSave = async () => {
+        if (!isAdmin || !householdName.trim()) return;
+        setHouseholdSaving(true);
+        const { error } = await supabase.from('household_settings')
+            .update({ name: householdName.trim(), address: householdAddress.trim() || null, updated_at: new Date().toISOString() })
+            .eq('id', 1);
+        setHouseholdSaving(false);
+        if (!error) {
+            setHouseholdSaved(true);
+            window.dispatchEvent(new CustomEvent('household-updated'));
+            setTimeout(() => setHouseholdSaved(false), 2500);
+        }
+    };
 
     const streamUrl = import.meta.env.VITE_CAMERA_STREAM_URL || '';
 
@@ -106,6 +164,89 @@ const SettingsPage = () => {
                         <span className="badge badge-info" style={{ textTransform: 'uppercase' }}>{profile?.role || 'resident'}</span>
                     </FieldRow>
                 </Section>
+
+                <Section icon={Lock} title="Password" desc="Update your sign-in password">
+                    {pwError && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{pwError}</div>}
+                    {pwSuccess && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s4)', color: 'var(--jade-core)', fontSize: 'var(--size-sm)' }}>
+                            <CheckCircle size={16} /> Password updated successfully.
+                        </div>
+                    )}
+                    <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Current Password</label>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type={showCurrentPw ? 'text' : 'password'}
+                                    className="form-input"
+                                    value={currentPw}
+                                    onChange={e => { setCurrentPw(e.target.value); setPwError(null); }}
+                                    required
+                                    disabled={pwSaving}
+                                    autoComplete="current-password"
+                                    style={{ paddingRight: 44 }}
+                                />
+                                <button type="button" onClick={() => setShowCurrentPw(v => !v)}
+                                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                    {showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">New Password</label>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type={showNewPw ? 'text' : 'password'}
+                                    className="form-input"
+                                    value={newPw}
+                                    onChange={e => { setNewPw(e.target.value); setPwError(null); }}
+                                    required
+                                    minLength={8}
+                                    disabled={pwSaving}
+                                    autoComplete="new-password"
+                                    style={{ paddingRight: 44 }}
+                                />
+                                <button type="button" onClick={() => setShowNewPw(v => !v)}
+                                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                    {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label">Confirm New Password</label>
+                            <input
+                                type="password"
+                                className="form-input"
+                                value={confirmPw}
+                                onChange={e => { setConfirmPw(e.target.value); setPwError(null); }}
+                                required
+                                disabled={pwSaving}
+                                autoComplete="new-password"
+                            />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button type="submit" className="btn btn-primary btn-sm" disabled={pwSaving || !currentPw || !newPw || !confirmPw}>
+                                {pwSaving ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <><Lock size={14} /> Update Password</>}
+                            </button>
+                        </div>
+                    </form>
+                </Section>
+
+                {isAdmin && (
+                    <Section icon={Home} title="Household" desc="Name shown across the dashboard for all users">
+                        <FieldRow label="Household Name" desc="e.g. Smith Residence">
+                            <input className="form-input" value={householdName} onChange={e => setHouseholdName(e.target.value)} style={{ width: 220 }} />
+                        </FieldRow>
+                        <FieldRow label="Address" desc="Optional — for reference only">
+                            <input className="form-input" value={householdAddress} onChange={e => setHouseholdAddress(e.target.value)} placeholder="Optional" style={{ width: 220 }} />
+                        </FieldRow>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--s4)' }}>
+                            <button type="button" className="btn btn-primary btn-sm" onClick={handleHouseholdSave} disabled={householdSaving || !householdName.trim()}>
+                                {householdSaved ? <><CheckCircle size={14} /> Saved</> : householdSaving ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <><Save size={14} /> Save Household</>}
+                            </button>
+                        </div>
+                    </Section>
+                )}
 
                 <Section icon={Palette} title="Appearance" desc="Interface theme">
                     <FieldRow

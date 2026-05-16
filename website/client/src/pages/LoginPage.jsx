@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Zap, ArrowRight, Thermometer, Droplets, ShieldCheck, Eye } from 'lucide-react';
+import { Zap, ArrowRight, Thermometer, Droplets, ShieldCheck, Eye, CheckCircle } from 'lucide-react';
 
 const FEATURE_PILLS = [
     { icon: Thermometer, text: 'Climate sensing', color: 'var(--ember-core)' },
@@ -13,6 +13,8 @@ const FEATURE_PILLS = [
 const LoginPage = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const location = useLocation();
+    const passwordResetSuccess = location.state?.passwordReset === true;
 
     const { login, error, loading, isAuthenticated } = useAuth();
 
@@ -70,6 +72,18 @@ const LoginPage = () => {
                         Enter your credentials to access the intelligence dashboard.
                     </p>
 
+                    {passwordResetSuccess && (
+                        <div style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 'var(--s3)',
+                            padding: 'var(--s4)', marginBottom: 'var(--s4)',
+                            background: 'rgba(0,229,160,0.08)', border: '1px solid rgba(0,229,160,0.25)',
+                            borderRadius: 'var(--r-md)', fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', lineHeight: 1.6,
+                        }}>
+                            <CheckCircle size={18} style={{ color: 'var(--jade-core)', flexShrink: 0, marginTop: 1 }} />
+                            <span>Your password has been updated successfully. You can sign in with your new password.</span>
+                        </div>
+                    )}
+
                     {error && <div className="auth-error">{error}</div>}
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
@@ -84,6 +98,14 @@ const LoginPage = () => {
                             <input type="password" className="form-input" placeholder="••••••••"
                                 value={password} onChange={(e) => setPassword(e.target.value)}
                                 required disabled={loading} minLength={6} />
+                            <div style={{ marginTop: 'var(--s2)', textAlign: 'right' }}>
+                                <Link
+                                    to="/forgot-password"
+                                    style={{ fontSize: 'var(--size-xs)', color: 'var(--ember-core)', textDecoration: 'none', fontWeight: 600 }}
+                                >
+                                    Forgot password?
+                                </Link>
+                            </div>
                         </div>
                         <button type="submit" className="btn btn-primary w-full" disabled={loading}
                             style={{ justifyContent: 'center', height: 52, fontSize: 'var(--size-md)', marginTop: 'var(--s2)', borderRadius: 'var(--r-lg)' }}>

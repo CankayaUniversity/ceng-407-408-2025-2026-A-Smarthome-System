@@ -9,6 +9,10 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [forcePasswordChange, setForcePasswordChange] = useState(false);
+    const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
+    /** Redirect URL for all password-reset emails (forgot password + admin invite). */
+    const passwordResetRedirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/update-password`;
 
     const fetchProfile = useCallback(async (userId) => {
         const { data } = await supabase
@@ -32,12 +36,13 @@ export const AuthProvider = ({ children }) => {
             (_event, session) => {
                 if (!mounted) return;
 
-                // Password recovery link clicked — show password change modal
+                // Password recovery link clicked — dedicated /update-password page
                 if (_event === 'PASSWORD_RECOVERY') {
                     const u = session?.user ?? null;
                     setUser(u);
                     setLoading(false);
-                    setForcePasswordChange(true);
+                    setIsPasswordRecovery(true);
+                    setForcePasswordChange(false);
                     if (u) {
                         setTimeout(() => {
                             fetchProfile(u.id).catch(e => console.error('[Auth] fetchProfile error:', e));
@@ -51,6 +56,7 @@ export const AuthProvider = ({ children }) => {
                 if (!u) {
                     setProfile(null);
                     setForcePasswordChange(false);
+                    setIsPasswordRecovery(false);
                 }
                 setLoading(false);
 
@@ -103,6 +109,10 @@ export const AuthProvider = ({ children }) => {
      * ardından Supabase resident'a "Şifreni belirle" maili gönderir.
      */
     const createResidentAccount = async (name, email) => {
+        if (profile?.role !== 'admin') {
+            return { success: false, error: 'Unauthorized: admin role required' };
+        }
+
         // A cryptographically random password nobody will ever see or use
         const dummyPassword = (
             typeof crypto !== 'undefined' && crypto.randomUUID
@@ -128,7 +138,7 @@ export const AuthProvider = ({ children }) => {
 
             // Send password-setup email — resident clicks the link and sets their own password
             const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/login`,
+                redirectTo: passwordResetRedirectUrl,
             });
             if (resetErr) console.warn('[Auth] resetPasswordForEmail failed:', resetErr.message);
 
@@ -150,6 +160,53 @@ export const AuthProvider = ({ children }) => {
             if (err) throw err;
             setForcePasswordChange(false);
             return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    };
+
+    /** Voluntary password change from Settings — verifies current password first. */
+    const requestPasswordReset = async (email) => {
+        try {
+            const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+                redirectTo: passwordResetRedirectUrl,
+            });
+            if (err) throw err;
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    };
+
+    /** Completes forgot-password flow: update password, sign out, return to login. */
+    const completePasswordRecovery = async (newPassword) => {
+        try {
+            const { error: err } = await supabase.auth.updateUser({
+                password: newPassword,
+                data: { force_password_change: false },
+            });
+            if (err) throw err;
+            setIsPasswordRecovery(false);
+            setForcePasswordChange(false);
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    };
+
+    const changePasswordWithVerification = async (currentPassword, newPassword) => {
+        const email = user?.email;
+        if (!email) return { success: false, error: 'No email associated with this account.' };
+
+        try {
+            const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
+            if (signInErr) {
+                return { success: false, error: 'Current password is incorrect.' };
+            }
+            return changePassword(newPassword);
         } catch (err) {
             return { success: false, error: err.message };
         }
@@ -192,8 +249,12 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: !!user,
         isAdmin,
         forcePasswordChange,
+        isPasswordRecovery,
+        requestPasswordReset,
+        completePasswordRecovery,
         createResidentAccount,
         changePassword,
+        changePasswordWithVerification,
         deleteAuthUser,
         refreshProfile,
     };

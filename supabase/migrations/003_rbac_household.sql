@@ -1,0 +1,2 @@
+-- RBAC hardening, household settings, resident account linking
+-- See supabase_setup_v4.sql for full script (run in Supabase SQL Editor)
