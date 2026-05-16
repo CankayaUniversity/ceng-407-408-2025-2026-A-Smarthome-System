@@ -34,11 +34,14 @@ const UpdatePasswordPage = () => {
             if (!mounted) return;
 
             const hash = window.location.hash || '';
-            const hasRecoveryHash = hash.includes('type=recovery') || hash.includes('access_token');
+            const hasAuthHash = hash.includes('access_token')
+                || hash.includes('type=recovery')
+                || hash.includes('type=signup')
+                || hash.includes('type=invite');
 
-            if (session && (isPasswordRecovery || hasRecoveryHash)) {
+            if (session && (isPasswordRecovery || hasAuthHash)) {
                 setSessionReady(true);
-            } else if (!session && hasRecoveryHash) {
+            } else if (!session && hasAuthHash) {
                 // detectSessionInUrl may still be processing
                 setTimeout(async () => {
                     const { data: { session: s2 } } = await supabase.auth.getSession();

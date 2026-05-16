@@ -11,8 +11,13 @@ export const AuthProvider = ({ children }) => {
     const [forcePasswordChange, setForcePasswordChange] = useState(false);
     const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
-    /** Redirect URL for all password-reset emails (forgot password + admin invite). */
-    const passwordResetRedirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/update-password`;
+    /** Public site URL for auth emails (set VITE_SITE_URL in production). */
+    const siteUrl = (
+        import.meta.env.VITE_SITE_URL
+        || (typeof window !== 'undefined' ? window.location.origin : '')
+    ).replace(/\/$/, '');
+
+    const passwordSetupRedirectUrl = `${siteUrl}/update-password`;
 
     const fetchProfile = useCallback(async (userId) => {
         const { data } = await supabase
@@ -125,6 +130,7 @@ export const AuthProvider = ({ children }) => {
                 email,
                 password: dummyPassword,
                 options: {
+                    emailRedirectTo: passwordSetupRedirectUrl,
                     data: {
                         name,
                         role: 'resident',
@@ -135,12 +141,6 @@ export const AuthProvider = ({ children }) => {
 
             if (err) throw err;
             if (!data?.user) throw new Error('Account creation returned no user. The email may already be registered.');
-
-            // Send password-setup email — resident clicks the link and sets their own password
-            const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: passwordResetRedirectUrl,
-            });
-            if (resetErr) console.warn('[Auth] resetPasswordForEmail failed:', resetErr.message);
 
             return { success: true, userId: data.user.id };
         } catch (err) {
@@ -169,7 +169,7 @@ export const AuthProvider = ({ children }) => {
     const requestPasswordReset = async (email) => {
         try {
             const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: passwordResetRedirectUrl,
+                redirectTo: passwordSetupRedirectUrl,
             });
             if (err) throw err;
             return { success: true };

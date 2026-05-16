@@ -5,6 +5,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { supabase, getPublicUrl } from '../../services/supabase';
 import { getProfileDisplayName } from '../../utils/faceDisplay';
+import ModalOverlay from '../ModalOverlay';
 
 export default function UnknownProfilePanel({
     profile,
@@ -261,15 +262,15 @@ export default function UnknownProfilePanel({
 
 function Modal({ title, onClose, children }) {
     return (
-        <div className="modal-overlay" onClick={onClose} style={{ zIndex: 3100 }}>
-            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+        <ModalOverlay onClose={onClose} zIndex={3100}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400, width: '100%' }}>
                 <div className="modal-header">
                     <h2 style={{ fontSize: 'var(--size-lg)' }}>{title}</h2>
                     <button type="button" className="modal-close" onClick={onClose}><X size={20} /></button>
                 </div>
                 <div style={{ padding: '0 var(--s5) var(--s5)' }}>{children}</div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

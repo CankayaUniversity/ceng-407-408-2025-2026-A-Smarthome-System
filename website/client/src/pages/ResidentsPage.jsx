@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import ModalOverlay from '../components/ModalOverlay';
-import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle, RefreshCw, Mail, KeyRound, Copy, Check, UserCheck } from 'lucide-react';
+import { Users, UserPlus, Trash2, Camera, ShieldCheck, X, Upload, CheckCircle, RefreshCw, Mail, KeyRound, Copy, Check, UserCheck, Clock } from 'lucide-react';
 import { supabase, getPublicUrl } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { residentHasLoginAccount, getResidentAccountBadge, attachResidentAuthStatus } from '../utils/residentAccount';
 
 /* ─── Avatar fallback: initials with gradient ──────────────── */
 function AvatarInitials({ name, size = 56 }) {
@@ -97,25 +98,51 @@ const ResidentsPage = () => {
 
     const loadResidentsRows = async () => {
         const { data } = await supabase.from('residents').select('*').order('created_at', { ascending: false });
-        return data || [];
+        const rows = data || [];
+        if (!rows.length) return rows;
+
+        // Legacy rows may have account_email but no auth_user_id — match profiles by email for UI
+        const emails = [...new Set(rows.map(r => r.account_email?.trim()).filter(Boolean))];
+        if (emails.length === 0) return rows;
+
+        const { data: profiles } = await supabase.from('profiles').select('id, email').in('email', emails);
+        if (!profiles?.length) return rows;
+
+        const profileIdByEmail = new Map(
+            profiles.map(p => [p.email?.trim().toLowerCase(), p.id]),
+        );
+
+        return rows.map(r => {
+            if (r.auth_user_id || !r.account_email) return r;
+            const profileId = profileIdByEmail.get(r.account_email.trim().toLowerCase());
+            return profileId ? { ...r, auth_user_id: profileId } : r;
+        });
     };
 
     const fetchResidents = async () => {
         setLoading(true);
-        setResidents(await loadResidentsRows());
+        let rows = await loadResidentsRows();
+        if (isAdmin) {
+            rows = await attachResidentAuthStatus(supabase, rows);
+        }
+        setResidents(rows);
         setLoading(false);
     };
 
     const handleRefreshList = async () => {
         setRefreshing(true);
         try {
-            setResidents(await loadResidentsRows());
+            let rows = await loadResidentsRows();
+            if (isAdmin) {
+                rows = await attachResidentAuthStatus(supabase, rows);
+            }
+            setResidents(rows);
         } finally {
             setRefreshing(false);
         }
     };
 
-    useEffect(() => { fetchResidents(); }, []);
+    useEffect(() => { fetchResidents(); }, [isAdmin]);
 
     const resetModal = () => {
         setShowModal(false);
@@ -305,7 +332,7 @@ const ResidentsPage = () => {
                         const safeName = r.name || 'Unknown';
 
                         return (
-                            <div key={r.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)', animation: `fadeIn 0.4s var(--ease-out) ${i * 60}ms both`, opacity: 0 }}>
+                            <div key={r.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s4)' }}>
                                     {/* Avatar: photo or initials fallback */}
                                     <div style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
@@ -333,7 +360,7 @@ const ResidentsPage = () => {
                                 </div>
                                 <div style={{ display: 'flex', gap: 'var(--s2)', marginTop: 'auto' }}>
                                     <button className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => handleCaptureOpen(r)}><Camera size={13} /> Upload Photo</button>
-                                    {isAdmin && !r.account_email && (
+                                    {isAdmin && !residentHasLoginAccount(r) && (
                                         <button
                                             className="btn btn-ghost btn-sm"
                                             style={{ flex: 1, justifyContent: 'center', borderColor: 'rgba(155,89,255,0.3)', color: 'var(--violet-core)' }}
@@ -343,11 +370,23 @@ const ResidentsPage = () => {
                                             <UserCheck size={13} /> Create Account
                                         </button>
                                     )}
-                                    {r.account_email && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--size-xxs)', color: 'var(--jade-core)', padding: '0 var(--s2)' }} title={r.account_email}>
-                                            <CheckCircle size={11} /> Linked
-                                        </div>
-                                    )}
+                                    {(() => {
+                                        const accountBadge = getResidentAccountBadge(r);
+                                        if (!accountBadge) return null;
+                                        const BadgeIcon = accountBadge.icon === 'check'
+                                            ? CheckCircle
+                                            : accountBadge.icon === 'clock'
+                                                ? Clock
+                                                : Mail;
+                                        return (
+                                            <div
+                                                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--size-xxs)', color: accountBadge.color, padding: '0 var(--s2)' }}
+                                                title={accountBadge.title}
+                                            >
+                                                <BadgeIcon size={11} /> {accountBadge.label}
+                                            </div>
+                                        );
+                                    })()}
                                     {isAdmin && (
                                         <button className="btn btn-danger btn-sm" onClick={() => handleDelete(r.id)}><Trash2 size={13} /></button>
                                     )}
@@ -393,7 +432,6 @@ const ResidentsPage = () => {
                                             checked={createAccount}
                                             onChange={e => { setCreateAccount(e.target.checked); if (!e.target.checked) setAccountEmail(''); }}
                                             disabled={saving}
-                                            style={{ width: 16, height: 16, accentColor: 'var(--violet-core)', cursor: 'pointer' }}
                                         />
                                         <div>
                                             <div style={{ fontSize: 'var(--size-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>

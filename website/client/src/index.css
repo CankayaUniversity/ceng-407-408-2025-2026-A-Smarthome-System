@@ -728,20 +728,67 @@ body::before {
 .form-input:focus {
   border-color: var(--ember-core);
   box-shadow: 0 0 0 3px var(--ember-glow);
-  background: var(--bg-surface);
+  background-color: var(--bg-surface);
 }
 
 select.form-input {
   appearance: none;
   cursor: pointer;
+  background-color: var(--bg-raised);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%234c5668'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
+  background-size: 12px 12px;
   background-position: right var(--s3) center;
   padding-right: var(--s8);
 }
 
+select.form-input:focus {
+  background-color: var(--bg-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%234c5668'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 12px 12px;
+  background-position: right var(--s3) center;
+}
+
 :root[data-theme="light"] select.form-input {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7587'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="light"] select.form-input:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7587'/%3E%3C/svg%3E");
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0;
+  border: 2px solid var(--border-medium);
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+}
+
+input[type="checkbox"]:hover {
+  border-color: var(--border-medium);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  border-color: var(--ember-core);
+  box-shadow: 0 0 0 3px var(--ember-glow);
+}
+
+input[type="checkbox"]:checked {
+  border-color: var(--ember-core);
+  background: var(--ember-core) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 select.form-input option { background: var(--bg-surface); }

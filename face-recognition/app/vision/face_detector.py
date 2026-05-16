@@ -30,8 +30,6 @@ class FaceDetector:
             self._backend = "face_recognition"
             logger.info("FaceDetector backend: face_recognition (mediapipe not available)")
 
-    # ── MediaPipe helpers ────────────────────────────────────────
-
     def _extract_faces_from_results(self, results, image_shape) -> list:
         if not results.detections:
             return []
@@ -51,14 +49,8 @@ class FaceDetector:
 
         return faces
 
-    # ── face_recognition helpers ─────────────────────────────────
-
     @staticmethod
     def _fr_locations_to_bboxes(locations: list) -> list:
-        """
-        face_recognition format: (top, right, bottom, left)
-        Mevcut sistem formatı:   [x, y, width, height]
-        """
         faces = []
         for (top, right, bottom, left) in locations:
             x = left
@@ -67,8 +59,6 @@ class FaceDetector:
             h = bottom - top
             faces.append([x, y, w, h])
         return faces
-
-    # ── Shared preprocessing ─────────────────────────────────────
 
     def _preprocess_for_detection(self, image):
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
@@ -89,8 +79,6 @@ class FaceDetector:
 
         return sharpened
 
-    # ── Main API ─────────────────────────────────────────────────
-
     def detect_faces(self, image_path: str) -> list:
         image = cv2.imread(image_path)
 
@@ -104,32 +92,9 @@ class FaceDetector:
     def _detect_mediapipe(self, image) -> list:
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = self.detector.process(image_rgb)
-        faces = self._extract_faces_from_results(results, image.shape)
-
-        if faces:
-            return faces
-
-        enhanced_image = self._preprocess_for_detection(image)
-        enhanced_rgb = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2RGB)
-        enhanced_results = self.detector.process(enhanced_rgb)
-        enhanced_faces = self._extract_faces_from_results(
-            enhanced_results,
-            enhanced_image.shape
-        )
-
-        return enhanced_faces
+        return self._extract_faces_from_results(results, image.shape)
 
     def _detect_fr(self, image) -> list:
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         locations = _fr.face_locations(image_rgb)
-        faces = self._fr_locations_to_bboxes(locations)
-
-        if faces:
-            return faces
-
-        enhanced_image = self._preprocess_for_detection(image)
-        enhanced_rgb = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2RGB)
-        enhanced_locations = _fr.face_locations(enhanced_rgb)
-        enhanced_faces = self._fr_locations_to_bboxes(enhanced_locations)
-
-        return enhanced_faces
+        return self._fr_locations_to_bboxes(locations)

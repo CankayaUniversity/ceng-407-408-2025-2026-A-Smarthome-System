@@ -1,37 +1,100 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ShieldAlert, Filter, CheckCircle2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { getEventMeta, getEventToneStyle, formatPriority, priorityBadgeClass } from '../utils/eventLabels';
 
+function isEventResolved(event) {
+    return Boolean(event.acknowledged_at) || event.status === 'acknowledged';
+}
+
 const AlertsPage = () => {
     const [alerts, setAlerts] = useState([]);
+    const [summary, setSummary] = useState({ active: 0, critical: 0 });
     const [loading, setLoading] = useState(true);
     const [filterStatus, setFilterStatus] = useState('all');
+    const [bulkAcking, setBulkAcking] = useState(false);
 
-    const fetchAlerts = async () => {
+    const fetchSummary = useCallback(async () => {
+        try {
+            const { count: active } = await supabase
+                .from('events')
+                .select('*', { count: 'exact', head: true })
+                .is('acknowledged_at', null)
+                .neq('status', 'acknowledged');
+
+            const { count: critical } = await supabase
+                .from('events')
+                .select('*', { count: 'exact', head: true })
+                .is('acknowledged_at', null)
+                .neq('status', 'acknowledged')
+                .eq('priority', 'critical');
+
+            setSummary({ active: active ?? 0, critical: critical ?? 0 });
+        } catch (err) {
+            console.error(err);
+        }
+    }, []);
+
+    const fetchAlerts = useCallback(async () => {
         setLoading(true);
         try {
             let query = supabase.from('events').select('*').order('created_at', { ascending: false }).limit(50);
-            if (filterStatus === 'active') query = query.is('acknowledged_at', null);
-            if (filterStatus === 'acknowledged') query = query.not('acknowledged_at', 'is', null);
+            if (filterStatus === 'active') {
+                query = query.is('acknowledged_at', null).neq('status', 'acknowledged');
+            }
+            if (filterStatus === 'acknowledged') {
+                query = query.or('acknowledged_at.not.is.null,status.eq.acknowledged');
+            }
             const { data } = await query;
             setAlerts(data || []);
-        } catch (err) { console.error(err); }
-        finally { setLoading(false); }
-    };
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, [filterStatus]);
 
-    useEffect(() => { fetchAlerts(); }, [filterStatus]);
+    useEffect(() => {
+        fetchSummary();
+        fetchAlerts();
+    }, [fetchSummary, fetchAlerts]);
+
+    const refresh = async () => {
+        await Promise.all([fetchSummary(), fetchAlerts()]);
+    };
 
     const acknowledge = async (id) => {
         try {
-            await supabase.from('events').update({ acknowledged_at: new Date().toISOString(), status: 'acknowledged' }).eq('id', id);
-            setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged_at: new Date().toISOString(), status: 'acknowledged' } : a));
-        } catch (err) { console.error(err); }
+            const now = new Date().toISOString();
+            await supabase.from('events').update({ acknowledged_at: now, status: 'acknowledged' }).eq('id', id);
+            setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged_at: now, status: 'acknowledged' } : a));
+            await fetchSummary();
+        } catch (err) {
+            console.error(err);
+        }
     };
 
-    const activeCount = alerts.filter(a => !a.acknowledged_at).length;
-    const criticalCount = alerts.filter(a => a.priority === 'critical' && !a.acknowledged_at).length;
+    const acknowledgeAllActive = async () => {
+        if (summary.active === 0 || bulkAcking) return;
+        setBulkAcking(true);
+        try {
+            const now = new Date().toISOString();
+            const { error } = await supabase
+                .from('events')
+                .update({ acknowledged_at: now, status: 'acknowledged' })
+                .is('acknowledged_at', null)
+                .neq('status', 'acknowledged');
+            if (error) throw error;
+            await refresh();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setBulkAcking(false);
+        }
+    };
+
+    const { active: activeCount, critical: criticalCount } = summary;
 
     return (
         <div>
@@ -54,18 +117,35 @@ const AlertsPage = () => {
                 </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 'var(--s2)', alignItems: 'center', marginBottom: 'var(--s6)', flexWrap: 'wrap' }}>
-                <Filter size={14} style={{ color: 'var(--text-secondary)' }} />
-                {[
-                    { id: 'all', label: 'All' },
-                    { id: 'active', label: 'Needs attention' },
-                    { id: 'acknowledged', label: 'Resolved' },
-                ].map(s => (
-                    <button key={s.id} className={`chip ${filterStatus === s.id ? 'chip-active' : 'chip-inactive'}`}
-                        onClick={() => setFilterStatus(s.id)}>
-                        {s.label}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--s3)', marginBottom: 'var(--s6)', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 'var(--s2)', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Filter size={14} style={{ color: 'var(--text-secondary)' }} />
+                    {[
+                        { id: 'all', label: 'All' },
+                        { id: 'active', label: 'Needs attention' },
+                        { id: 'acknowledged', label: 'Resolved' },
+                    ].map(s => (
+                        <button key={s.id} className={`chip ${filterStatus === s.id ? 'chip-active' : 'chip-inactive'}`}
+                            onClick={() => setFilterStatus(s.id)}>
+                            {s.label}
+                        </button>
+                    ))}
+                </div>
+                {activeCount > 0 && filterStatus !== 'acknowledged' && (
+                    <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={acknowledgeAllActive}
+                        disabled={bulkAcking}
+                    >
+                        {bulkAcking ? (
+                            <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                        ) : (
+                            <CheckCircle2 size={14} />
+                        )}
+                        Acknowledge all ({activeCount})
                     </button>
-                ))}
+                )}
             </div>
 
             {loading ? (
@@ -73,16 +153,20 @@ const AlertsPage = () => {
             ) : alerts.length === 0 ? (
                 <div className="card empty-state">
                     <div className="empty-state-icon"><ShieldAlert size={48} /></div>
-                    <h3>All clear</h3>
-                    <p>No alerts match your filters. Your home looks secure right now.</p>
+                    <h3>{filterStatus === 'acknowledged' ? 'No resolved alerts yet' : 'All clear'}</h3>
+                    <p>
+                        {filterStatus === 'acknowledged'
+                            ? 'Acknowledged alerts will appear here after you mark them as checked.'
+                            : 'No alerts match your filters. Your home looks secure right now.'}
+                    </p>
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s3)' }}>
-                    {alerts.map((alert, i) => {
+                    {alerts.map((alert) => {
                         const meta = getEventMeta(alert.event_type);
                         const tone = getEventToneStyle(meta.tone);
                         const Icon = meta.icon;
-                        const isActive = !alert.acknowledged_at;
+                        const isActive = !isEventResolved(alert);
                         return (
                             <div
                                 key={alert.id}
@@ -94,8 +178,6 @@ const AlertsPage = () => {
                                     padding: 'var(--s4) var(--s5)',
                                     borderColor: isActive ? tone.border : 'var(--border-soft)',
                                     background: isActive ? tone.bg : 'var(--bg-surface)',
-                                    animation: `fadeIn 0.4s var(--ease-out) ${i * 40}ms both`,
-                                    opacity: 0,
                                 }}
                             >
                                 <div style={{

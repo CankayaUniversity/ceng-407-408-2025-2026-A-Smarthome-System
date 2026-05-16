@@ -15,6 +15,7 @@ import {
     getDetectionSubtitle,
 } from '../utils/faceDisplay';
 import UnknownProfilePanel from '../components/Identity/UnknownProfilePanel';
+import ModalOverlay from '../components/ModalOverlay';
 
 const EVENT_FACE_SELECT = `
   id, classification, match_score, resident_id, unknown_profile_id, camera_event_id,
@@ -695,7 +696,7 @@ const IdentityPage = () => {
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 'var(--s5)', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 'var(--s5)', alignItems: 'start' }}>
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                     <div style={{ padding: 'var(--s4) var(--s5)', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-raised)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--s3)' }}>
@@ -854,8 +855,8 @@ const IdentityPage = () => {
             </div>
 
             {assignTarget && isAdmin && (
-                <div className="modal-overlay" onClick={() => setAssignTarget(null)}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                <ModalOverlay onClose={() => setAssignTarget(null)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440, width: '100%' }}>
                         <div className="modal-header">
                             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <UserPlus size={18} style={{ color: 'var(--violet-core)' }} />
@@ -900,7 +901,7 @@ const IdentityPage = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </div>
     );
