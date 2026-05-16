@@ -1,4 +1,5 @@
 import logging
+import os
 
 import cv2
 import numpy as np
@@ -12,6 +13,11 @@ except ImportError:
 import face_recognition as _fr
 
 logger = logging.getLogger(__name__)
+
+_MIN_FACE_PX = int(os.getenv("MIN_FACE_PX", "60"))
+_MIN_FACE_CONFIDENCE = float(os.getenv("MIN_FACE_CONFIDENCE", "0.65"))
+_MIN_ASPECT_RATIO = 0.6
+_MAX_ASPECT_RATIO = 1.6
 
 
 class FaceDetector:
@@ -38,12 +44,36 @@ class FaceDetector:
         faces = []
 
         for detection in results.detections:
+            score = detection.score[0] if detection.score else 0.0
+            if score < _MIN_FACE_CONFIDENCE:
+                logger.debug(
+                    "MediaPipe bbox reddedildi: score=%.3f < %.3f",
+                    score, _MIN_FACE_CONFIDENCE,
+                )
+                continue
+
             bbox = detection.location_data.relative_bounding_box
 
             x = max(0, int(bbox.xmin * w))
             y = max(0, int(bbox.ymin * h))
             width = int(bbox.width * w)
             height = int(bbox.height * h)
+
+            if width < _MIN_FACE_PX or height < _MIN_FACE_PX:
+                logger.debug(
+                    "MediaPipe bbox reddedildi: boyut=%dx%d < %dpx",
+                    width, height, _MIN_FACE_PX,
+                )
+                continue
+
+            if height > 0:
+                ratio = width / height
+                if not (_MIN_ASPECT_RATIO <= ratio <= _MAX_ASPECT_RATIO):
+                    logger.debug(
+                        "MediaPipe bbox reddedildi: aspect_ratio=%.2f, beklenen [%.1f, %.1f]",
+                        ratio, _MIN_ASPECT_RATIO, _MAX_ASPECT_RATIO,
+                    )
+                    continue
 
             faces.append([x, y, width, height])
 
@@ -57,6 +87,23 @@ class FaceDetector:
             y = top
             w = right - left
             h = bottom - top
+
+            if w < _MIN_FACE_PX or h < _MIN_FACE_PX:
+                logger.debug(
+                    "face_recognition bbox reddedildi: boyut=%dx%d < %dpx",
+                    w, h, _MIN_FACE_PX,
+                )
+                continue
+
+            if h > 0:
+                ratio = w / h
+                if not (_MIN_ASPECT_RATIO <= ratio <= _MAX_ASPECT_RATIO):
+                    logger.debug(
+                        "face_recognition bbox reddedildi: aspect_ratio=%.2f, beklenen [%.1f, %.1f]",
+                        ratio, _MIN_ASPECT_RATIO, _MAX_ASPECT_RATIO,
+                    )
+                    continue
+
             faces.append([x, y, w, h])
         return faces
 
