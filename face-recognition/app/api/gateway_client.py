@@ -29,7 +29,14 @@ def _post_json(endpoint: str, payload: dict):
     except requests.HTTPError as exc:
         body = ""
         try:
-            body = exc.response.text[:500] if exc.response is not None else ""
+            if exc.response is not None:
+                body = exc.response.text[:500]
+                try:
+                    detail = exc.response.json().get("detail")
+                    if detail:
+                        body = str(detail)[:500]
+                except Exception:
+                    pass
         except Exception:
             pass
         logger.warning("POST %s failed: %s | body=%s", endpoint, exc, body)
@@ -52,7 +59,14 @@ def _post_file(endpoint: str, params: dict, file_path: str):
     except requests.HTTPError as exc:
         body = ""
         try:
-            body = exc.response.text[:500] if exc.response is not None else ""
+            if exc.response is not None:
+                body = exc.response.text[:500]
+                try:
+                    detail = exc.response.json().get("detail")
+                    if detail:
+                        body = str(detail)[:500]
+                except Exception:
+                    pass
         except Exception:
             pass
         logger.warning("UPLOAD %s failed: %s | body=%s", endpoint, exc, body)

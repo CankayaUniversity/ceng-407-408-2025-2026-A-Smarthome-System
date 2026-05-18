@@ -451,6 +451,7 @@ def create_security_event(event: SecurityEvent):
                 "event_type": event.event_type,
                 "priority": "high",
                 "message": event.message,
+                "status": "active",
             })
             .execute()
         )
@@ -474,6 +475,7 @@ def create_alert_event(event: AlertEvent):
                 "event_type": event.event_type,
                 "priority": event.priority,
                 "message": event.message,
+                "status": "active",
             })
             .execute()
         )

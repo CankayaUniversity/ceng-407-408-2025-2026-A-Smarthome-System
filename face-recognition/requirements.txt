@@ -9,10 +9,12 @@ websocket-client>=1.6.0
 # mediapipe  # optional: ARM'de yok, face_recognition fallback kullanilir
 adafruit-circuitpython-dht
 adafruit-blinka
+lgpio  # Raspberry Pi 5 GPIO (bcm2712); Pi 4 may use RPi.GPIO instead
 python-dotenv
 
 # Gateway (main.py) dependencies
 fastapi
+python-multipart
 uvicorn[standard]
 pydantic
 supabase
