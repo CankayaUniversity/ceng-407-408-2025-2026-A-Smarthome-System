@@ -37,7 +37,9 @@ class FaceEmbedder:
     def get_embedding_from_crop(self, crop_bgr: np.ndarray, padding: int = 20) -> list | None:
         """
         MediaPipe bbox ile kesilmiş crop görüntüsünden embedding çıkarır.
-        Crop'un tamamını yüz lokasyonu olarak verir; tekrar detection yapmaz.
+        Padding eklendikten sonra dlib HOG ile yüz varlığı doğrulanır; yüz
+        bulunamazsa None döner (false-positive koruması). Doğrulama geçerse
+        tespit edilen gerçek lokasyon ile encoding üretilir.
         Başarısızsa None döner.
         """
         if crop_bgr is None or crop_bgr.size == 0:
@@ -55,12 +57,16 @@ class FaceEmbedder:
             cv2.BORDER_REPLICATE,
         )
 
-        ph, pw = padded.shape[:2]
-        # Tüm padded görüntüyü tek yüz lokasyonu olarak ver
-        # face_recognition formatı: (top, right, bottom, left)
-        face_location = [(padding, pw - padding, ph - padding, padding)]
+        # Crop'ta gerçekten yüz var mı dlib HOG ile doğrula.
+        # Bu adım olmadan MediaPipe'ın false-positive bbox'larından
+        # embedding üretilip unknown/visitor kaydı açılabilirdi.
+        verified_locations = face_recognition.face_locations(padded)
+        if not verified_locations:
+            return None
 
-        encodings = face_recognition.face_encodings(padded, known_face_locations=face_location)
+        encodings = face_recognition.face_encodings(
+            padded, known_face_locations=verified_locations
+        )
 
         if len(encodings) == 0:
             return None

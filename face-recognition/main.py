@@ -504,6 +504,20 @@ async def upload_intelligent_snapshot(
     try:
         ensure_event_exists(event_id)
 
+        if face_count <= 0 or bbox is None:
+            logger.warning(
+                "upload-intelligent reddedildi: face_count=%d, bbox=%r (event_id=%s)",
+                face_count, bbox, event_id,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Geçerli yüz tespiti olmadan yükleme reddedildi: "
+                    f"face_count={face_count}, bbox={bbox!r}. "
+                    "Bounding box içeren en az bir yüz tespiti gereklidir."
+                ),
+            )
+
         file_bytes = await file.read()
 
         folder = RESIDENT_PREFIX if is_resident else UNKNOWN_PREFIX
