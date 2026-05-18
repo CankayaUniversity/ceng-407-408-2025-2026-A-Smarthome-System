@@ -60,7 +60,7 @@ logging.basicConfig(
 logger = logging.getLogger("edge")
 
 # ── Live relay configuration ─────────────────────────────────
-RELAY_URL = os.environ.get("RELAY_URL", "ws://92.5.17.205:8080")
+RELAY_URL = os.environ.get("RELAY_URL", "ws://165.245.243.130:8080")
 RELAY_FPS = int(os.environ.get("RELAY_FPS", "15"))
 RELAY_JPEG_QUALITY = int(os.environ.get("RELAY_JPEG_QUALITY", "60"))
 RELAY_ENABLED = os.environ.get("RELAY_ENABLED", "true").lower() in ("1", "true", "yes")

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Radio, WifiOff, Video, VideoOff } from 'lucide-react';
 
 const DEFAULT_RELAY_URL =
-  import.meta.env.VITE_RELAY_WS_URL || 'ws://92.5.17.205:8080';
+  import.meta.env.VITE_RELAY_WS_URL || 'ws://165.245.243.130:8080';
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS  = 16000;
 

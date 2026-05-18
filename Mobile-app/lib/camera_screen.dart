@@ -409,7 +409,7 @@ class _FeedCard extends StatelessWidget {
     // Falls back to the cloud relay server default.
     const relayUrl = String.fromEnvironment(
       'RELAY_WS_URL',
-      defaultValue: 'ws://92.5.17.205:8080',
+      defaultValue: 'ws://165.245.243.130:8080',
     );
 
     // Prefer WebSocket live view when the relay URL is available

@@ -16,7 +16,7 @@ import '../theme/app_theme.dart';
 ///   - FPS counter overlay
 ///   - Graceful disposal of resources
 class WebSocketLiveView extends StatefulWidget {
-  /// WebSocket relay URL (e.g. ws://92.5.17.205:8080).
+  /// WebSocket relay URL (e.g. ws://165.245.243.130:8080).
   final String url;
 
   /// How the image should be inscribed into the widget bounds.

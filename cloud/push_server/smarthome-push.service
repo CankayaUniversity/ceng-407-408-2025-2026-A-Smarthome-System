@@ -1,0 +1,14 @@
+[Unit]
+Description=SmartHome Push Webhook (FCM)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/smarthome-push
+EnvironmentFile=/opt/smarthome-push/.env
+ExecStart=/opt/smarthome-push/venv/bin/gunicorn -w 1 -b 127.0.0.1:3000 app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

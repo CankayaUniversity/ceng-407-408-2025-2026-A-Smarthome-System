@@ -21,7 +21,7 @@
    python3 stream_camera.py --width 640 --height 480 --fps 15
 
  Environment overrides (optional):
-   RELAY_URL   — WebSocket relay URL  (default ws://92.5.17.205:8080)
+   RELAY_URL   — WebSocket relay URL  (default ws://165.245.243.130:8080)
    STREAM_FPS  — target frames per second
 ─────────────────────────────────────────────────────────────────
 """
@@ -64,7 +64,7 @@ log = logging.getLogger(__name__)
 
 # ── Default configuration ────────────────────────────────────────
 
-DEFAULT_RELAY_URL = "ws://92.5.17.205:8080"
+DEFAULT_RELAY_URL = "ws://165.245.243.130:8080"
 DEFAULT_WIDTH = 640
 DEFAULT_HEIGHT = 480
 DEFAULT_FPS = 20

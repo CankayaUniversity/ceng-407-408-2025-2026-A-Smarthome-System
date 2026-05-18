@@ -112,7 +112,7 @@ For the website, configure `website/client/.env`:
 ```env
 VITE_SUPABASE_URL=https://xxx.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key>
-VITE_RELAY_WS_URL=ws://92.5.17.205:8080
+VITE_RELAY_WS_URL=ws://165.245.243.130:8080
 ```
 
 For the mobile app, edit `Mobile-app/lib/config/supabase_config.dart`:
@@ -125,7 +125,7 @@ static const String supabaseAnonKey = '<anon-key>';
 For the Pi live camera relay, these environment variables are supported:
 
 ```env
-RELAY_URL=ws://92.5.17.205:8080
+RELAY_URL=ws://165.245.243.130:8080
 RELAY_ENABLED=true
 STREAM_ON_DEMAND=true
 RELAY_FPS=15
@@ -167,7 +167,7 @@ In Pi terminal 2:
 
 ```bash
 cd face-recognition
-RELAY_URL=ws://92.5.17.205:8080 \
+RELAY_URL=ws://165.245.243.130:8080 \
 RELAY_ENABLED=true \
 STREAM_ON_DEMAND=true \
 CAMERA_COLOR_MODE=no_convert \
@@ -248,7 +248,7 @@ Use this only when `run_edge.py` is not running:
 
 ```bash
 cd face-recognition
-RELAY_URL=ws://92.5.17.205:8080 \
+RELAY_URL=ws://165.245.243.130:8080 \
 STREAM_ON_DEMAND=true \
 CAMERA_COLOR_MODE=no_convert \
 python3 stream_camera.py
