@@ -63,6 +63,9 @@ if _cors_origins:
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
+# Must match Supabase CHECK (events_status_check), e.g. ('pending', 'acknowledged').
+EVENT_STATUS_NEW = os.getenv("EVENT_STATUS_NEW", "pending")
+
 SNAPSHOT_BUCKET = os.getenv("SUPABASE_SNAPSHOT_BUCKET", "event-snapshots")
 # Storage prefixes under bucket `event-snapshots` (see docs/STORAGE.md).
 # Do not use legacy folder `strangers/` — it is unused.
@@ -451,7 +454,7 @@ def create_security_event(event: SecurityEvent):
                 "event_type": event.event_type,
                 "priority": "high",
                 "message": event.message,
-                "status": "active",
+                "status": EVENT_STATUS_NEW,
             })
             .execute()
         )
@@ -475,7 +478,7 @@ def create_alert_event(event: AlertEvent):
                 "event_type": event.event_type,
                 "priority": event.priority,
                 "message": event.message,
-                "status": "active",
+                "status": EVENT_STATUS_NEW,
             })
             .execute()
         )
