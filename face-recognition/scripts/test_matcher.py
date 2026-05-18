@@ -10,7 +10,7 @@ def main():
     args = parser.parse_args()
 
     embedder = FaceEmbedder()
-    matcher = FaceMatcher(threshold=0.55)
+    matcher = FaceMatcher()
 
     try:
         embedding = embedder.get_embedding(args.image)

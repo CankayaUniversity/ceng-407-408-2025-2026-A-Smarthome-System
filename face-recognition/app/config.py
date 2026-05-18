@@ -40,6 +40,12 @@ BURST_DELAY_SECONDS = 0.3
 # ─── Logging ─────────────────────────────────────────────────
 EVENTS_LOG_PATH = BASE_DIR / "app" / "storage" / "events.jsonl"
 
+# ─── Face matching (Euclidean distance on 128-D embeddings; lower = closer) ─
+# Default 0.45 is stricter than the old 0.55 to reduce friend↔friend mix-ups.
+FACE_MATCH_THRESHOLD = float(os.environ.get("FACE_MATCH_THRESHOLD", "0.45"))
+# Require gap between 1st and 2nd best resident; if too close, treat as unknown.
+FACE_MATCH_MIN_MARGIN = float(os.environ.get("FACE_MATCH_MIN_MARGIN", "0.06"))
+
 # ─── Storage ─────────────────────────────────────────────────
 RESIDENTS_FILE = BASE_DIR / "app" / "storage" / "residents.json"
 

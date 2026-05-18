@@ -76,7 +76,7 @@ dht_device = adafruit_dht.DHT11(board.D4, use_pulseio=False)
 # ── AI modules ─────────────────────────────────────────────────
 detector = FaceDetector()
 embedder = FaceEmbedder()
-matcher = FaceMatcher()
+matcher = FaceMatcher()  # threshold/margin from app.config (FACE_MATCH_* env)
 event_logger = EventLogger()
 
 # ── Shared state ───────────────────────────────────────────────
@@ -430,6 +430,11 @@ def main():
     global last_capture_time
 
     logger.info("Initializing Smart Home Edge Core...")
+    logger.info(
+        "FaceMatcher: threshold=%.3f min_margin=%.3f (env: FACE_MATCH_THRESHOLD, FACE_MATCH_MIN_MARGIN)",
+        matcher.threshold,
+        matcher.min_margin,
+    )
 
     sync_interval = int(os.environ.get("SYNC_RESIDENTS_INTERVAL", "60"))
     start_resident_sync_thread(interval=sync_interval)
