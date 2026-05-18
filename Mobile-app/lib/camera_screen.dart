@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'config/relay_config.dart';
 import 'config/supabase_config.dart';
 import 'models/face_capture.dart';
 import 'providers/supabase_data_provider.dart';
@@ -405,14 +406,8 @@ class _FeedCard extends StatelessWidget {
   }
 
   Widget _liveContent(AppTokens tokens) {
-    // WebSocket relay URL — pass via --dart-define=RELAY_WS_URL=ws://...
-    // Falls back to the cloud relay server default.
-    const relayUrl = String.fromEnvironment(
-      'RELAY_WS_URL',
-      defaultValue: 'ws://165.245.243.130:8080',
-    );
+    const relayUrl = RelayConfig.relayWsUrl;
 
-    // Prefer WebSocket live view when the relay URL is available
     if (relayUrl.isNotEmpty) {
       return WebSocketLiveView(url: relayUrl);
     }
@@ -423,7 +418,7 @@ class _FeedCard extends StatelessWidget {
         tokens,
         Icons.signal_wifi_off,
         'No live stream configured',
-        'Build with --dart-define=RELAY_WS_URL=ws://... or --dart-define=CAMERA_STREAM_URL=...',
+        'Build with --dart-define=RELAY_WS_URL=wss://relay.yoursmarthome.app',
       );
     }
     if (SupabaseConfig.cameraStreamType.toLowerCase() == 'hls') {

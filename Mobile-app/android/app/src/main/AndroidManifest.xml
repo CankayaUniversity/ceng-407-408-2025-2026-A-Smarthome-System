@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <!-- flutter_local_notifications: permission to post notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 

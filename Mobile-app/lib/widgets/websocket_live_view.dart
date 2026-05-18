@@ -6,20 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../theme/app_theme.dart';
 
-/// WebSocket-based live camera viewer.
-///
-/// Connects to the cloud relay server, registers as a "viewer",
-/// and renders incoming base64-encoded JPEG frames in real time.
-///
-/// Features:
-///   - Automatic reconnection with exponential back-off
-///   - FPS counter overlay
-///   - Graceful disposal of resources
+/// WebSocket-based live camera viewer (relay protocol: register as viewer, receive base64 JPEG).
 class WebSocketLiveView extends StatefulWidget {
-  /// WebSocket relay URL (e.g. ws://165.245.243.130:8080).
   final String url;
-
-  /// How the image should be inscribed into the widget bounds.
   final BoxFit fit;
 
   const WebSocketLiveView({
@@ -37,16 +26,18 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
   StreamSubscription? _subscription;
 
   Uint8List? _frameBytes;
-  bool _connected = false;
+  bool _handshakeDone = false;
+  bool _hasFrame = false;
   bool _connecting = false;
+  String? _lastError;
   int _fps = 0;
 
-  // Reconnect back-off
   Timer? _reconnectTimer;
-  int _reconnectDelay = 1; // seconds
+  Timer? _frameWaitTimer;
+  int _reconnectDelay = 1;
   static const int _maxReconnectDelay = 30;
+  static const Duration _firstFrameTimeout = Duration(seconds: 20);
 
-  // FPS counter
   int _frameCount = 0;
   Timer? _fpsTimer;
 
@@ -58,59 +49,72 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
 
   @override
   void dispose() {
-    _cleanup();
     _reconnectTimer?.cancel();
+    _frameWaitTimer?.cancel();
     _fpsTimer?.cancel();
+    _cleanup();
     super.dispose();
   }
 
-  // ── Connection lifecycle ────────────────────────────────────
-
-  void _connect() {
+  Future<void> _connect() async {
     if (!mounted) return;
     _cleanup();
 
     setState(() {
       _connecting = true;
-      _connected = false;
+      _handshakeDone = false;
+      _hasFrame = false;
+      _lastError = null;
     });
 
     try {
       final uri = Uri.parse(widget.url);
+      debugPrint('[WebSocketLiveView] Connecting to $uri');
+
       _channel = WebSocketChannel.connect(uri);
+      await _channel!.ready;
 
-      // Register as viewer
+      if (!mounted) return;
+
       _channel!.sink.add(jsonEncode({'role': 'viewer'}));
+      _handshakeDone = true;
 
-      // Start listening for frames
       _subscription = _channel!.stream.listen(
-        _onFrame,
+        _onMessage,
         onError: _onError,
         onDone: _onDone,
         cancelOnError: false,
       );
 
-      // Mark connected after a short delay (allows handshake)
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted && _channel != null) {
-          setState(() {
-            _connected = true;
-            _connecting = false;
-          });
-          _reconnectDelay = 1; // reset back-off
-          _startFpsCounter();
-        }
+      _frameWaitTimer?.cancel();
+      _frameWaitTimer = Timer(_firstFrameTimeout, () {
+        if (!mounted || _hasFrame) return;
+        debugPrint('[WebSocketLiveView] No frame within timeout');
+        setState(() {
+          _lastError =
+              'No video frames yet. Is the Pi running with RELAY_ENABLED=true?';
+        });
+        _scheduleReconnect();
       });
     } catch (e) {
       debugPrint('[WebSocketLiveView] Connection error: $e');
+      if (mounted) {
+        setState(() {
+          _lastError = e.toString();
+        });
+      }
       _scheduleReconnect();
     }
   }
 
   void _cleanup() {
+    _frameWaitTimer?.cancel();
+    _frameWaitTimer = null;
     _subscription?.cancel();
     _subscription = null;
-    _channel?.sink.close();
+    try {
+      _channel?.sink.close();
+    } catch (_) {}
     _channel = null;
     _fpsTimer?.cancel();
     _fpsTimer = null;
@@ -119,9 +123,11 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
 
   void _scheduleReconnect() {
     if (!mounted) return;
+    _cleanup();
     setState(() {
-      _connected = false;
       _connecting = false;
+      _handshakeDone = false;
+      _hasFrame = false;
     });
 
     _reconnectTimer?.cancel();
@@ -131,22 +137,50 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
     _reconnectDelay = (_reconnectDelay * 2).clamp(1, _maxReconnectDelay);
   }
 
-  // ── Frame handling ──────────────────────────────────────────
-
-  void _onFrame(dynamic data) {
+  void _onMessage(dynamic data) {
     if (!mounted) return;
+
     try {
-      final String b64 = data is String ? data : utf8.decode(data as List<int>);
+      final String payload = data is String
+          ? data
+          : utf8.decode(data as List<int>);
+
+      if (payload.isEmpty) return;
+      if (payload.startsWith('{')) {
+        // Relay control/JSON — ignore for viewers
+        return;
+      }
+
+      String b64 = payload;
+      if (b64.startsWith('data:image')) {
+        final comma = b64.indexOf(',');
+        if (comma >= 0) b64 = b64.substring(comma + 1);
+      }
+
       final bytes = base64Decode(b64);
-      setState(() => _frameBytes = bytes);
+      if (!_hasFrame) {
+        _frameWaitTimer?.cancel();
+        _reconnectDelay = 1;
+        _startFpsCounter();
+      }
+
+      setState(() {
+        _frameBytes = bytes;
+        _hasFrame = true;
+        _connecting = false;
+        _lastError = null;
+      });
       _frameCount++;
     } catch (e) {
-      // Silently skip malformed frames
+      debugPrint('[WebSocketLiveView] Frame decode error: $e');
     }
   }
 
   void _onError(Object error) {
     debugPrint('[WebSocketLiveView] Stream error: $error');
+    if (mounted) {
+      setState(() => _lastError = error.toString());
+    }
     _scheduleReconnect();
   }
 
@@ -154,8 +188,6 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
     debugPrint('[WebSocketLiveView] Stream closed');
     _scheduleReconnect();
   }
-
-  // ── FPS counter ─────────────────────────────────────────────
 
   void _startFpsCounter() {
     _fpsTimer?.cancel();
@@ -170,24 +202,19 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
     });
   }
 
-  // ── Build ───────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
 
-    // Connected and receiving frames
-    if (_connected && _frameBytes != null) {
+    if (_hasFrame && _frameBytes != null) {
       return Stack(
         fit: StackFit.expand,
         children: [
           Image.memory(
             _frameBytes!,
             fit: widget.fit,
-            gaplessPlayback: true, // prevents flicker between frames
+            gaplessPlayback: true,
           ),
-
-          // LIVE badge — top left
           Positioned(
             top: 10,
             left: 10,
@@ -231,8 +258,6 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
               ),
             ),
           ),
-
-          // FPS counter — top right
           Positioned(
             top: 10,
             right: 10,
@@ -257,7 +282,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
       );
     }
 
-    // Connecting / offline state
+    final waiting = _connecting || (_handshakeDone && !_hasFrame);
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -272,7 +297,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_connecting)
+              if (waiting)
                 SizedBox(
                   width: 32,
                   height: 32,
@@ -289,7 +314,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
                 ),
               const SizedBox(height: 10),
               Text(
-                _connecting ? 'Connecting to camera...' : 'Live feed offline',
+                waiting ? 'Connecting to camera...' : 'Live feed offline',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
@@ -299,16 +324,17 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
               ),
               const SizedBox(height: 4),
               Text(
-                _connecting
-                    ? 'Establishing WebSocket connection'
-                    : 'Stream unavailable — will retry automatically',
+                _lastError ??
+                    (waiting
+                        ? 'Relay: ${widget.url}'
+                        : 'Stream unavailable — will retry automatically'),
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.55),
                   fontSize: 11,
                 ),
                 textAlign: TextAlign.center,
               ),
-              if (!_connecting) ...[
+              if (!waiting) ...[
                 const SizedBox(height: 14),
                 TextButton.icon(
                   onPressed: () {
