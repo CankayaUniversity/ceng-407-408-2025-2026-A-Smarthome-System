@@ -27,7 +27,7 @@ class SensorReading {
       unit: json['unit']?.toString() ?? '',
       recordedAt:
           DateTime.tryParse(json['recorded_at']?.toString() ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
     );
   }
 
@@ -36,14 +36,13 @@ class SensorReading {
       case 'smoke':
         return value > 0;
       case 'water':
-        // water 1 = wet (good), 0 = dry (needs watering)
-        return value == 0;
+        // Web parity: water 1 = leak, 0 = dry.
+        return value > 0;
       default:
         return false;
     }
   }
 
   @override
-  String toString() =>
-      'SensorReading($sensorType: $value$unit at $recordedAt)';
+  String toString() => 'SensorReading($sensorType: $value$unit at $recordedAt)';
 }

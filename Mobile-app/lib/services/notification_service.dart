@@ -12,15 +12,15 @@ class NotificationService {
 
   static const AndroidNotificationDetails _androidDetails =
       AndroidNotificationDetails(
-    _alertChannelId,
-    _alertChannelName,
-    channelDescription: 'Smart Home security alerts and notifications',
-    importance: Importance.high,
-    priority: Priority.high,
-    playSound: true,
-    enableVibration: true,
-    icon: '@mipmap/ic_launcher',
-  );
+        _alertChannelId,
+        _alertChannelName,
+        channelDescription: 'Smart Home security alerts and notifications',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+        enableVibration: true,
+        icon: '@mipmap/ic_launcher',
+      );
 
   static const NotificationDetails _notificationDetails = NotificationDetails(
     android: _androidDetails,
@@ -34,8 +34,9 @@ class NotificationService {
   static Future<void> initialize({
     required void Function(NotificationResponse) onTap,
   }) async {
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -60,25 +61,64 @@ class NotificationService {
     );
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(alertChannel);
 
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.requestNotificationsPermission();
+  }
+
+  /// Background isolates cannot reuse the foreground callback closure from
+  /// main.dart. This keeps data-only FCM messages visible while the app is
+  /// backgrounded/terminated without depending on the full widget tree.
+  static Future<void> initializeBackground() async {
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    const settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    await flutterLocalNotificationsPlugin.initialize(
+      settings,
+      onDidReceiveBackgroundNotificationResponse: onBackgroundNotificationTap,
+    );
+
+    const alertChannel = AndroidNotificationChannel(
+      _alertChannelId,
+      _alertChannelName,
+      description: 'Smart Home security alerts and notifications',
+      importance: Importance.high,
+    );
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(alertChannel);
   }
 
   static Future<void> show({
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     await flutterLocalNotificationsPlugin.show(
       id,
       title,
       body,
       _notificationDetails,
+      payload: payload,
     );
   }
 }
