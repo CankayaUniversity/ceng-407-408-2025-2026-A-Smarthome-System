@@ -4,9 +4,29 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <title>Your Smart Home</title>
   </head>
   <body>
+    <script type="text/javascript">
+      // Restore deep-link path after GitHub Pages 404.html redirect (spa-github-pages)
+      (function (l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search
+            .slice(1)
+            .split('&')
+            .map(function (s) {
+              return s.replace(/~and~/g, '&');
+            })
+            .join('?')
+            .split('#');
+          window.history.replaceState(
+            null,
+            null,
+            l.pathname.slice(0, -1) + (decoded[0] || '') + (decoded[1] ? '#' + decoded[1] : '')
+          );
+        }
+      })(window.location);
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
