@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +17,9 @@ import 'providers/supabase_data_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
+import 'screens/change_password_modal.dart';
+import 'screens/update_password_screen.dart';
+import 'services/deep_link_service.dart';
 import 'services/fcm_registration_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
@@ -31,7 +37,9 @@ Future<void> main() async {
     FcmRegistrationService.ensureTokenRefreshListener();
   } catch (e, st) {
     if (kDebugMode) {
-      debugPrint('Firebase init skipped (configure Firebase to enable FCM): $e $st');
+      debugPrint(
+        'Firebase init skipped (configure Firebase to enable FCM): $e $st',
+      );
     }
   }
 
@@ -39,6 +47,17 @@ Future<void> main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
+
+  // Hook custom-scheme deep links into Supabase auth so password-recovery
+  // emails (web parity: redirectTo=io.cankaya.smarthome://login-callback/)
+  // fire AuthChangeEvent.passwordRecovery once the app is opened.
+  try {
+    await DeepLinkService.initialize();
+  } catch (e, st) {
+    if (kDebugMode) {
+      debugPrint('Deep link init skipped: $e $st');
+    }
+  }
 
   await NotificationService.initialize(onTap: _onNotificationTap);
 
@@ -51,6 +70,7 @@ Future<void> main() async {
             id: message.hashCode & 0x7fffffff,
             title: n.title ?? 'Alert',
             body: n.body ?? '',
+            payload: jsonEncode(message.data),
           );
         }
       } catch (e, st) {
@@ -63,7 +83,10 @@ Future<void> main() async {
       if (kDebugMode) {
         debugPrint('FCM opened from background: ${message.data}');
       }
-      _openAlertsFromPushTap();
+      _openAlertsFromPushTap(
+        eventType: message.data['event_type']?.toString(),
+        eventId: message.data['event_id']?.toString(),
+      );
     });
   } catch (e, st) {
     if (kDebugMode) {
@@ -81,7 +104,10 @@ Future<void> main() async {
         if (kDebugMode) {
           debugPrint('FCM cold start: ${initial.data}');
         }
-        _openAlertsFromPushTap();
+        _openAlertsFromPushTap(
+          eventType: initial.data['event_type']?.toString(),
+          eventId: initial.data['event_id']?.toString(),
+        );
       }
     } catch (e, st) {
       if (kDebugMode) {
@@ -91,11 +117,16 @@ Future<void> main() async {
   });
 }
 
-void _openAlertsFromPushTap() {
+void _openAlertsFromPushTap({String? eventType, String? eventId}) {
   final context = navigatorKey.currentContext;
   if (context != null) {
     try {
-      context.read<NotificationProvider>().triggerPopup();
+      unawaited(
+        context.read<NotificationProvider>().handlePushTap(
+          eventType: eventType,
+          eventId: eventId,
+        ),
+      );
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('FCM navigation: $e $st');
@@ -105,7 +136,24 @@ void _openAlertsFromPushTap() {
 }
 
 void _onNotificationTap(NotificationResponse details) {
-  _openAlertsFromPushTap();
+  final payload = details.payload;
+  if (payload == null || payload.isEmpty) {
+    _openAlertsFromPushTap();
+    return;
+  }
+  try {
+    final data = jsonDecode(payload);
+    if (data is Map) {
+      _openAlertsFromPushTap(
+        eventType: data['event_type']?.toString(),
+        eventId: data['event_id']?.toString(),
+      );
+      return;
+    }
+  } catch (_) {
+    // Backward-compatible payloads carried only the event_type string.
+  }
+  _openAlertsFromPushTap(eventType: payload);
 }
 
 class MyApp extends StatelessWidget {
@@ -123,8 +171,11 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => SupabaseDataProvider()),
-        ChangeNotifierProxyProvider2<AuthProvider, SupabaseDataProvider,
-            NotificationProvider>(
+        ChangeNotifierProxyProvider2<
+          AuthProvider,
+          SupabaseDataProvider,
+          NotificationProvider
+        >(
           create: (_) => NotificationProvider(),
           update: (_, auth, data, notif) {
             notif!
@@ -157,9 +208,21 @@ class MyApp extends StatelessWidget {
                 body: Center(child: CircularProgressIndicator()),
               );
             }
-            return auth.isAuthenticated
-                ? const AppShell()
-                : const LoginScreen();
+            // Web parity: PasswordRecoveryRedirect in App.jsx routes the user
+            // to /update-password whenever a recovery session is active.
+            if (auth.isPasswordRecovery) {
+              return const UpdatePasswordScreen();
+            }
+            if (!auth.isAuthenticated) {
+              return const LoginScreen();
+            }
+            // Web parity: GlobalOverlays in App.jsx replaces the app shell
+            // entirely with the password change modal until the resident
+            // rotates their invite password.
+            if (auth.forcePasswordChange) {
+              return const ChangePasswordModal();
+            }
+            return const AppShell();
           },
         ),
       ),

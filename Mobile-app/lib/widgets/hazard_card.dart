@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../models/environment_data.dart';
 import '../theme/app_theme.dart';
 
-/// Compact hazard tile for the dashboard. Shows
-/// "active n/total" + "peak" with an alert frame and badge
-/// when any of the sensors trips (`value > 0`).
+/// Compact hazard tile for binary dashboard sensors such as smoke/water.
+/// Shows active count plus a clear status instead of numeric peaks.
 class HazardCard extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -26,11 +26,6 @@ class HazardCard extends StatelessWidget {
     final tokens = context.tokens;
     final active = sensors.where((s) => s.value > 0).length;
     final total = sensors.length;
-    final peak = sensors.isEmpty
-        ? 0.0
-        : sensors
-            .map((s) => s.value)
-            .reduce((a, b) => a > b ? a : b);
     final isAlert = active > 0;
 
     final cardBg = isAlert
@@ -80,7 +75,9 @@ class HazardCard extends StatelessWidget {
               if (isAlert)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: tokens.crimsonCore.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
@@ -133,13 +130,13 @@ class HazardCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: _Tile(
-                  label: 'Peak',
-                  alert: false,
+                  label: 'Status',
+                  alert: isAlert,
                   child: Text(
-                    total > 0 ? peak.toStringAsFixed(1) : '—',
+                    total > 0 ? (isAlert ? alertText : 'CLEAR') : '-',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 18,
+                      fontSize: 16,
                       color: isAlert ? tokens.crimsonCore : accent,
                     ),
                   ),
@@ -158,11 +155,7 @@ class _Tile extends StatelessWidget {
   final bool alert;
   final Widget child;
 
-  const _Tile({
-    required this.label,
-    required this.alert,
-    required this.child,
-  });
+  const _Tile({required this.label, required this.alert, required this.child});
 
   @override
   Widget build(BuildContext context) {

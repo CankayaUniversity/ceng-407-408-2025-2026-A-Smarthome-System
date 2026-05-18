@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 import 'models/face_capture.dart';
 import 'providers/notification_provider.dart';
 import 'providers/supabase_data_provider.dart';
-import 'services/supabase_data_service.dart';
 import 'security_alert_screen.dart';
 import 'theme/app_theme.dart';
+import 'utils/event_meta.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -19,72 +19,97 @@ class _AlertsScreenState extends State<AlertsScreen> {
   final Set<String> _acknowledgedIds = {};
 
   Map<String, Map<String, dynamic>> _alertConfig(AppTokens tokens) => {
-        'fire_alert': {
-          'icon': Icons.local_fire_department,
-          'color': tokens.crimsonCore,
-          'category': 'Environment'
-        },
-        'fire': {
-          'icon': Icons.local_fire_department,
-          'color': tokens.crimsonCore,
-          'category': 'Environment'
-        },
-        'smoke': {
-          'icon': Icons.cloud,
-          'color': tokens.crimsonCore,
-          'category': 'Environment'
-        },
-        'flood': {
-          'icon': Icons.water_drop,
-          'color': tokens.sensorWater,
-          'category': 'Environment'
-        },
-        'water': {
-          'icon': Icons.water_drop,
-          'color': tokens.sensorWater,
-          'category': 'Environment'
-        },
-        'gas': {
-          'icon': Icons.air,
-          'color': tokens.amberCore,
-          'category': 'Environment'
-        },
-        'stranger_detected': {
-          'icon': Icons.person,
-          'color': tokens.emberCore,
-          'category': 'Security'
-        },
-        'intrusion': {
-          'icon': Icons.person,
-          'color': tokens.emberCore,
-          'category': 'Security'
-        },
-        'resident_detected': {
-          'icon': Icons.person,
-          'color': tokens.jadeCore,
-          'category': 'Security'
-        },
-        'face_detected': {
-          'icon': Icons.person,
-          'color': tokens.violetCore,
-          'category': 'Security'
-        },
-        'motion': {
-          'icon': Icons.directions_run,
-          'color': tokens.violetCore,
-          'category': 'Security'
-        },
-        'door': {
-          'icon': Icons.door_front_door,
-          'color': tokens.jadeCore,
-          'category': 'Security'
-        },
-        'system': {
-          'icon': Icons.system_update,
-          'color': tokens.textSecondary,
-          'category': 'System'
-        },
-      };
+    'fire_alert': {
+      'icon': Icons.local_fire_department,
+      'color': tokens.crimsonCore,
+      'category': 'Environment',
+    },
+    'fire': {
+      'icon': Icons.local_fire_department,
+      'color': tokens.crimsonCore,
+      'category': 'Environment',
+    },
+    'smoke': {
+      'icon': Icons.cloud,
+      'color': tokens.crimsonCore,
+      'category': 'Environment',
+    },
+    'flood': {
+      'icon': Icons.water_drop,
+      'color': tokens.sensorWater,
+      'category': 'Environment',
+    },
+    'flood_cleared': {
+      'icon': Icons.water_drop,
+      'color': tokens.textSecondary,
+      'category': 'Environment',
+    },
+    'water': {
+      'icon': Icons.water_drop,
+      'color': tokens.sensorWater,
+      'category': 'Environment',
+    },
+    'gas': {
+      'icon': Icons.air,
+      'color': tokens.amberCore,
+      'category': 'Environment',
+    },
+    'stranger_detected': {
+      'icon': Icons.person,
+      'color': tokens.emberCore,
+      'category': 'Security',
+    },
+    'intrusion': {
+      'icon': Icons.person,
+      'color': tokens.emberCore,
+      'category': 'Security',
+    },
+    'resident_detected': {
+      'icon': Icons.person,
+      'color': tokens.jadeCore,
+      'category': 'Security',
+    },
+    'resident_entry': {
+      'icon': Icons.verified_user,
+      'color': tokens.jadeCore,
+      'category': 'Security',
+    },
+    'face_detected': {
+      'icon': Icons.person,
+      'color': tokens.violetCore,
+      'category': 'Security',
+    },
+    'motion': {
+      'icon': Icons.directions_run,
+      'color': tokens.violetCore,
+      'category': 'Security',
+    },
+    'motion_detected': {
+      'icon': Icons.directions_run,
+      'color': tokens.violetCore,
+      'category': 'Security',
+    },
+    'door': {
+      'icon': Icons.door_front_door,
+      'color': tokens.jadeCore,
+      'category': 'Security',
+    },
+    'door_open': {
+      'icon': Icons.door_front_door,
+      'color': tokens.jadeCore,
+      'category': 'Security',
+    },
+    'low_moisture': {
+      'icon': Icons.air,
+      'color': tokens.amberCore,
+      'category': 'Environment',
+    },
+    'system': {
+      'icon': Icons.system_update,
+      'color': tokens.textSecondary,
+      'category': 'System',
+    },
+  };
 
   Future<void> _acknowledge(String id) async {
     if (id.isEmpty) return;
@@ -94,10 +119,21 @@ class _AlertsScreenState extends State<AlertsScreen> {
     if (id.startsWith('evt_')) {
       final rawId = id.substring(4);
       try {
-        await SupabaseDataService.acknowledgeEvent(rawId);
+        await context.read<SupabaseDataProvider>().acknowledgeEvent(rawId);
       } catch (_) {}
     }
     if (mounted) setState(() => _acknowledgedIds.add(id));
+  }
+
+  Future<void> _acknowledgeAll() async {
+    try {
+      await context.read<SupabaseDataProvider>().acknowledgeAllActiveEvents();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to acknowledge alerts: $e')),
+      );
+    }
   }
 
   String _timeAgo(DateTime dt) {
@@ -113,7 +149,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   void _handleAlertTap(Map<String, dynamic> alert) {
-    final hasSnapshot = alert['snapshot_path'] != null ||
+    final hasSnapshot =
+        alert['snapshot_path'] != null ||
         alert['classification'] != null ||
         alert['isFromCamera'] == true;
     if (!hasSnapshot) return;
@@ -124,8 +161,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => SecurityAlertScreen(
         snapshotPath: alert['snapshot_path']?.toString(),
-        timestamp: alert['createdAt']?.toString() ??
-            alert['created_at']?.toString(),
+        timestamp:
+            alert['createdAt']?.toString() ?? alert['created_at']?.toString(),
         classification: alert['classification']?.toString(),
         residentName: alert['residentName']?.toString(),
       ),
@@ -136,10 +173,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Widget build(BuildContext context) {
     const filters = [
       'All',
+      'Needs Attention',
       'Security',
       'Environment',
       'System',
-      'Acknowledged',
+      'Resolved',
     ];
     final tokens = context.tokens;
     final config = _alertConfig(tokens);
@@ -152,9 +190,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
       return <String, dynamic>{
         'id': 'evt_${e['id']?.toString() ?? ''}',
         'type': eventType,
-        'title': e['message']?.toString() ?? eventType,
+        'title': getEventMeta(eventType).title,
         'message': e['message']?.toString() ?? 'Event detected.',
-        'acknowledged': e['acknowledged'] ?? false,
+        'acknowledged': isEventResolved(e),
+        'priority': e['priority'],
         'createdAt':
             e['created_at']?.toString() ?? DateTime.now().toIso8601String(),
         'snapshot_path': e['snapshot_path'],
@@ -165,6 +204,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
       final capture = FaceCapture.fromCameraEvent(row);
       final isResident = capture.isResident;
       final eventType = isResident ? 'resident_detected' : 'stranger_detected';
+      // Web parity: clustered unknowns carry a label like "Unknown #3 ·
+      // 5x seen" which we now surface in the alert message too.
+      final hasClusteredLabel =
+          !isResident &&
+          capture.unknownProfileLabel != null &&
+          capture.unknownProfileLabel!.isNotEmpty;
       return <String, dynamic>{
         'id': 'cam_${row['id']?.toString() ?? ''}',
         'type': eventType,
@@ -172,6 +217,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
             ? 'Known resident identified'
             : 'Unknown person detected',
         'message': isResident
+            ? '${capture.displayName} was detected by the camera.'
+            : hasClusteredLabel
             ? '${capture.displayName} was detected by the camera.'
             : 'Camera detected an unidentified person.',
         'acknowledged': false,
@@ -187,17 +234,19 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final notifAlerts = notifProvider.faceAlerts;
 
     final seen = <String>{};
-    final mergedAlerts = [...notifAlerts, ...camEvents, ...dbEvents].where((a) {
-      final id = (a['id'] ?? '').toString();
-      return id.isEmpty ? true : seen.add(id);
-    }).toList()
-      ..sort((a, b) {
-        final aT = DateTime.tryParse(a['createdAt']?.toString() ?? '') ??
-            DateTime(0);
-        final bT = DateTime.tryParse(b['createdAt']?.toString() ?? '') ??
-            DateTime(0);
-        return bT.compareTo(aT);
-      });
+    final mergedAlerts =
+        [...notifAlerts, ...camEvents, ...dbEvents].where((a) {
+          final id = (a['id'] ?? '').toString();
+          return id.isEmpty ? true : seen.add(id);
+        }).toList()..sort((a, b) {
+          final aT =
+              DateTime.tryParse(a['createdAt']?.toString() ?? '') ??
+              DateTime(0);
+          final bT =
+              DateTime.tryParse(b['createdAt']?.toString() ?? '') ??
+              DateTime(0);
+          return bT.compareTo(aT);
+        });
 
     for (final alert in mergedAlerts) {
       final id = alert['id']?.toString() ?? '';
@@ -205,8 +254,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
     }
 
     final filteredAlerts = mergedAlerts.where((a) {
-      if (_selectedFilter == 'Acknowledged') {
+      if (_selectedFilter == 'Resolved') {
         return a['acknowledged'] == true;
+      }
+      if (_selectedFilter == 'Needs Attention') {
+        return a['acknowledged'] != true;
       }
       if (_selectedFilter == 'All') return true;
       final type = (a['type'] ?? '').toString().toLowerCase();
@@ -214,10 +266,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
       return cat == _selectedFilter;
     }).toList();
 
-    final activeAlerts =
-        filteredAlerts.where((a) => a['acknowledged'] != true).toList();
-    final ackAlerts =
-        filteredAlerts.where((a) => a['acknowledged'] == true).toList();
+    final activeAlerts = filteredAlerts
+        .where((a) => a['acknowledged'] != true)
+        .toList();
+    final ackAlerts = filteredAlerts
+        .where((a) => a['acknowledged'] == true)
+        .toList();
 
     return Scaffold(
       backgroundColor: tokens.bgVoid,
@@ -225,8 +279,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Row(
                 children: [
                   Icon(Icons.arrow_back, color: tokens.textPrimary),
@@ -248,20 +301,20 @@ class _AlertsScreenState extends State<AlertsScreen> {
             ),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Row(
                 children: filters.map((filter) {
                   final isSelected = filter == _selectedFilter;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onTap: () =>
-                          setState(() => _selectedFilter = filter),
+                      onTap: () => setState(() => _selectedFilter = filter),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: isSelected
                               ? tokens.emberCore
@@ -277,8 +330,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (isSelected) ...[
-                              const Icon(Icons.check,
-                                  color: Colors.white, size: 16),
+                              const Icon(
+                                Icons.check,
+                                color: Colors.white,
+                                size: 16,
+                              ),
                               const SizedBox(width: 6),
                             ],
                             Text(
@@ -301,73 +357,100 @@ class _AlertsScreenState extends State<AlertsScreen> {
                 }).toList(),
               ),
             ),
+            if (activeAlerts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    onPressed: _acknowledgeAll,
+                    icon: Icon(
+                      Icons.check_circle_outline,
+                      size: 16,
+                      color: tokens.emberCore,
+                    ),
+                    label: Text(
+                      'Acknowledge all (${activeAlerts.length})',
+                      style: TextStyle(
+                        color: tokens.emberCore,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: tokens.emberCore.withValues(alpha: 0.4),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 12),
             Expanded(
               child: supabaseData.loading && mergedAlerts.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : filteredAlerts.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No alerts found.',
-                            style: TextStyle(color: tokens.textMuted),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: () => context
-                              .read<SupabaseDataProvider>()
-                              .fetchAll(),
-                          child: CustomScrollView(
-                            slivers: [
-                              if (activeAlerts.isNotEmpty) ...[
-                                SliverToBoxAdapter(
-                                  child: _SectionHeader(
-                                    label: 'ACTIVE',
-                                    count: activeAlerts.length,
-                                    accent: tokens.emberCore,
-                                  ),
-                                ),
-                                SliverPadding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20),
-                                  sliver: SliverList.builder(
-                                    itemCount: activeAlerts.length,
-                                    itemBuilder: (_, i) => _buildAlertCard(
-                                      context,
-                                      activeAlerts[i],
-                                      config,
-                                      tokens,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              if (ackAlerts.isNotEmpty) ...[
-                                SliverToBoxAdapter(
-                                  child: _SectionHeader(
-                                    label: 'ACKNOWLEDGED',
-                                    count: ackAlerts.length,
-                                    accent: tokens.textMuted,
-                                  ),
-                                ),
-                                SliverPadding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20),
-                                  sliver: SliverList.builder(
-                                    itemCount: ackAlerts.length,
-                                    itemBuilder: (_, i) => _buildAlertCard(
-                                      context,
-                                      ackAlerts[i],
-                                      config,
-                                      tokens,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 24),
+                  ? Center(
+                      child: Text(
+                        'No alerts found.',
+                        style: TextStyle(color: tokens.textMuted),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () =>
+                          context.read<SupabaseDataProvider>().fetchAll(),
+                      child: CustomScrollView(
+                        slivers: [
+                          if (activeAlerts.isNotEmpty) ...[
+                            SliverToBoxAdapter(
+                              child: _SectionHeader(
+                                label: 'ACTIVE',
+                                count: activeAlerts.length,
+                                accent: tokens.emberCore,
                               ),
-                            ],
-                          ),
-                        ),
+                            ),
+                            SliverPadding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              sliver: SliverList.builder(
+                                itemCount: activeAlerts.length,
+                                itemBuilder: (_, i) => _buildAlertCard(
+                                  context,
+                                  activeAlerts[i],
+                                  tokens,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (ackAlerts.isNotEmpty) ...[
+                            SliverToBoxAdapter(
+                              child: _SectionHeader(
+                                label: 'ACKNOWLEDGED',
+                                count: ackAlerts.length,
+                                accent: tokens.textMuted,
+                              ),
+                            ),
+                            SliverPadding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              sliver: SliverList.builder(
+                                itemCount: ackAlerts.length,
+                                itemBuilder: (_, i) => _buildAlertCard(
+                                  context,
+                                  ackAlerts[i],
+                                  tokens,
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                        ],
+                      ),
+                    ),
             ),
           ],
         ),
@@ -378,17 +461,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Widget _buildAlertCard(
     BuildContext context,
     Map<String, dynamic> alert,
-    Map<String, Map<String, dynamic>> config,
     AppTokens tokens,
   ) {
     final type = (alert['type'] ?? 'system').toString().toLowerCase();
-    final cfg = config[type] ?? config['system']!;
-    final cfgColor = cfg['color'] as Color;
+    final meta = getEventMeta(type);
+    final cfgColor = _toneColor(meta.tone, tokens);
     final ack = alert['acknowledged'] == true;
-    final dt =
-        DateTime.tryParse(alert['createdAt'] ?? '') ?? DateTime.now();
-    final title = alert['title']?.toString() ?? 'Alert';
-    final desc = alert['message'] ?? 'Unknown condition';
+    final dt = DateTime.tryParse(alert['createdAt'] ?? '') ?? DateTime.now();
+    final title = alert['title']?.toString() ?? meta.title;
+    final desc = alert['message'] ?? meta.short;
 
     return GestureDetector(
       onTap: () => _handleAlertTap(alert),
@@ -423,11 +504,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                       color: cfgColor.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      cfg['icon'] as IconData,
-                      color: cfgColor,
-                      size: 22,
-                    ),
+                    child: Icon(meta.icon, color: cfgColor, size: 22),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -456,6 +533,16 @@ class _AlertsScreenState extends State<AlertsScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 6),
+                        Text(
+                          formatPriority(alert['priority']?.toString()),
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: cfgColor,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -474,12 +561,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: ack
-                        ? null
-                        : () => _acknowledge(alert['id'] ?? ''),
+                    onTap: ack ? null : () => _acknowledge(alert['id'] ?? ''),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: ack
                             ? tokens.bgRaised
@@ -495,8 +582,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (ack) ...[
-                            Icon(Icons.check_circle,
-                                size: 13, color: tokens.jadeCore),
+                            Icon(
+                              Icons.check_circle,
+                              size: 13,
+                              color: tokens.jadeCore,
+                            ),
                             const SizedBox(width: 5),
                           ],
                           Text(
@@ -505,9 +595,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: ack
-                                  ? tokens.textMuted
-                                  : tokens.emberCore,
+                              color: ack ? tokens.textMuted : tokens.emberCore,
                             ),
                           ),
                         ],
@@ -521,6 +609,19 @@ class _AlertsScreenState extends State<AlertsScreen> {
         ),
       ),
     );
+  }
+
+  Color _toneColor(EventTone tone, AppTokens tokens) {
+    switch (tone) {
+      case EventTone.critical:
+        return tokens.crimsonCore;
+      case EventTone.warning:
+        return tokens.amberCore;
+      case EventTone.success:
+        return tokens.jadeCore;
+      case EventTone.info:
+        return tokens.textSecondary;
+    }
   }
 }
 
@@ -562,8 +663,7 @@ class _SectionHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(99),

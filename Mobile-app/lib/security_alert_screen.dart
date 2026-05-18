@@ -19,8 +19,6 @@ class SecurityAlertScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
-    final scheme = Theme.of(context).colorScheme;
-
     final isResident = classification?.toLowerCase() == 'resident';
     final displayName = isResident
         ? (residentName ?? 'Known Person')
@@ -117,70 +115,20 @@ class SecurityAlertScreen extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.image_not_supported,
-                            size: 48, color: tokens.textWhisper),
+                        Icon(
+                          Icons.image_not_supported,
+                          size: 48,
+                          color: tokens.textWhisper,
+                        ),
                         const SizedBox(height: 8),
-                        Text('No snapshot available',
-                            style: TextStyle(color: tokens.textMuted)),
+                        Text(
+                          'No snapshot available',
+                          style: TextStyle(color: tokens.textMuted),
+                        ),
                       ],
                     ),
                   )
                 : null,
-          ),
-          const SizedBox(height: 24),
-          if (!isResident) ...[
-            ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Authorities Contacted!')),
-                );
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tokens.crimsonCore,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 0,
-              ),
-              child: const Text(
-                'CALL AUTHORITIES',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          OutlinedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text(
-                        isResident ? 'Dismissed' : 'Marked as False Alarm')),
-              );
-              Navigator.pop(context);
-            },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: scheme.onSurface,
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              side: BorderSide(color: tokens.borderMedium, width: 2),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: Text(
-              isResident ? 'DISMISS' : 'FALSE ALARM',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.0,
-              ),
-            ),
           ),
           const SizedBox(height: 24),
         ],

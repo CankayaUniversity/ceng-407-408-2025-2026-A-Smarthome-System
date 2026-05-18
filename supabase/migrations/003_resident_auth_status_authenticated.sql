@@ -1,7 +1,6 @@
--- v9: Admin RPC — resident login badge status (re-run safe)
--- Run in Supabase SQL Editor
+-- Allow any signed-in household user to read resident login badges (not admin-only).
+-- Re-run safe. Required for Residents page when logged in as resident role.
 
--- Return type changed (added force_password_change) — must drop first on re-run
 DROP FUNCTION IF EXISTS public.get_auth_users_status(UUID[]);
 
 CREATE OR REPLACE FUNCTION public.get_auth_users_status(user_ids UUID[])
@@ -39,4 +38,4 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_auth_users_status(UUID[]) TO authenticated;
 
 COMMENT ON FUNCTION public.get_auth_users_status(UUID[]) IS
-  'Authenticated users: email confirmation, last sign-in, and force_password_change for resident badges.';
+  'Authenticated users: login badge fields for residents (email confirmed, last sign-in, force_password_change).';

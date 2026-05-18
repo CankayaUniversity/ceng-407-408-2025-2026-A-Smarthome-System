@@ -3,13 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'config/relay_config.dart';
-import 'config/supabase_config.dart';
 import 'models/face_capture.dart';
 import 'providers/supabase_data_provider.dart';
 import 'security_alert_screen.dart';
 import 'theme/app_theme.dart';
-import 'widgets/mjpeg_view.dart';
-import 'widgets/hls_player.dart';
 import 'widgets/websocket_live_view.dart';
 
 enum FeedMode { live, snapshot }
@@ -24,6 +21,23 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> {
   FeedMode _mode = FeedMode.snapshot;
 
+  /// Web-parity LIVE/STOP state. Camera does not auto-stream — the user
+  /// taps GO LIVE to open a viewer socket; the relay then unblocks the Pi.
+  bool _isLive = false;
+
+  void _setMode(FeedMode m) {
+    setState(() {
+      _mode = m;
+      // Leaving the Live tab tears the WebSocket down so the relay can
+      // signal `stop` to the Pi when no viewers remain.
+      if (m != FeedMode.live) _isLive = false;
+    });
+  }
+
+  void _toggleLive() {
+    setState(() => _isLive = !_isLive);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -33,7 +47,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
     final latestCapture =
         latestEvent != null ? FaceCapture.fromCameraEvent(latestEvent) : null;
-    final hasLiveStream = SupabaseConfig.cameraStreamUrl.isNotEmpty;
 
     return Scaffold(
       backgroundColor: tokens.bgVoid,
@@ -66,7 +79,7 @@ class _CameraScreenState extends State<CameraScreen> {
                       _FeedModeSwitch(
                         mode: _mode,
                         liveEnabled: true,
-                        onChanged: (m) => setState(() => _mode = m),
+                        onChanged: _setMode,
                       ),
                     ],
                   ),
@@ -80,7 +93,8 @@ class _CameraScreenState extends State<CameraScreen> {
                   child: _FeedCard(
                     mode: _mode,
                     capture: latestCapture,
-                    hasLiveStream: hasLiveStream,
+                    isLive: _isLive,
+                    onToggleLive: _toggleLive,
                     onTapSnapshot: latestCapture != null
                         ? () => _showDetail(context, latestCapture)
                         : null,
@@ -253,13 +267,15 @@ class _FeedModeSwitch extends StatelessWidget {
 class _FeedCard extends StatelessWidget {
   final FeedMode mode;
   final FaceCapture? capture;
-  final bool hasLiveStream;
+  final bool isLive;
+  final VoidCallback onToggleLive;
   final VoidCallback? onTapSnapshot;
 
   const _FeedCard({
     required this.mode,
     required this.capture,
-    required this.hasLiveStream,
+    required this.isLive,
+    required this.onToggleLive,
     required this.onTapSnapshot,
   });
 
@@ -301,7 +317,7 @@ class _FeedCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: mode == FeedMode.live
+                    color: (mode == FeedMode.live && isLive)
                         ? tokens.crimsonCore.withValues(alpha: 0.85)
                         : Colors.black.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(20),
@@ -319,7 +335,9 @@ class _FeedCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        mode == FeedMode.live ? 'LIVE' : 'SNAPSHOT',
+                        mode == FeedMode.live
+                            ? (isLive ? 'LIVE' : 'STANDBY')
+                            : 'SNAPSHOT',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,
@@ -332,26 +350,66 @@ class _FeedCard extends StatelessWidget {
                 ),
               ),
 
+              // LIVE / STOP toggle (web parity with LiveCameraFeed.handleToggleLive)
+              if (mode == FeedMode.live)
+                Positioned(
+                  bottom: 14,
+                  right: 14,
+                  child: ElevatedButton.icon(
+                    onPressed: onToggleLive,
+                    icon: Icon(
+                      isLive ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                      size: 18,
+                    ),
+                    label: Text(
+                      isLive ? 'STOP' : 'GO LIVE',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                        fontSize: 12,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isLive
+                          ? tokens.crimsonCore
+                          : tokens.emberCore,
+                      foregroundColor: Colors.white,
+                      elevation: 6,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(99)),
+                    ),
+                  ),
+                ),
+
               if (mode == FeedMode.snapshot && capture != null) ...[
                 Positioned(
                   top: 12,
                   right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: capture!.isResident
-                          ? tokens.jadeCore.withValues(alpha: 0.9)
-                          : tokens.crimsonCore.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      capture!.displayName.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: capture!.isResident
+                            ? tokens.jadeCore.withValues(alpha: 0.9)
+                            : tokens.crimsonCore.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      // Web parity: `displayName` carries clustered unknown
+                      // labels like "Unknown #3 · 5x seen" when available.
+                      child: Text(
+                        capture!.displayName.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                   ),
@@ -407,24 +465,15 @@ class _FeedCard extends StatelessWidget {
 
   Widget _liveContent(AppTokens tokens) {
     const relayUrl = RelayConfig.relayWsUrl;
-
-    if (relayUrl.isNotEmpty) {
-      return WebSocketLiveView(url: relayUrl);
-    }
-
-    // Fallback to legacy MJPEG / HLS if configured
-    if (!hasLiveStream) {
+    if (relayUrl.isEmpty) {
       return _empty(
         tokens,
         Icons.signal_wifi_off,
         'No live stream configured',
-        'Build with --dart-define=RELAY_WS_URL=wss://relay.yoursmarthome.app',
+        'Build with --dart-define=RELAY_WS_URL=ws://165.245.243.130:8080',
       );
     }
-    if (SupabaseConfig.cameraStreamType.toLowerCase() == 'hls') {
-      return HlsPlayer(url: SupabaseConfig.cameraStreamUrl);
-    }
-    return MjpegView(url: SupabaseConfig.cameraStreamUrl);
+    return WebSocketLiveView(url: relayUrl, enabled: isLive);
   }
 
   Widget _empty(

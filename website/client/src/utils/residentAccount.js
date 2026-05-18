@@ -1,7 +1,8 @@
 /** Resident row has any login record (new or legacy columns). */
 export function residentHasLoginAccount(resident) {
     if (!resident) return false;
-    return Boolean(resident.auth_user_id || resident.account_email || resident.user_id);
+    // Do not use legacy user_id — it caused false "Invite sent" badges for non-admins.
+    return Boolean(resident.auth_user_id || resident.account_email);
 }
 
 /**
@@ -79,26 +80,8 @@ export function getResidentAccountBadge(resident) {
         };
     }
 
-    const authId = getResidentAuthUserId(resident);
-    if (residentHasLoginAccount(resident) && !authId) {
-        return {
-            label: 'Invite sent',
-            color: 'var(--amber-core)',
-            icon: 'mail',
-            title: email
-                ? `Login linked to ${email}. Refresh after running supabase_setup_v9 SQL.`
-                : 'Login invite recorded.',
-        };
-    }
-
-    return {
-        label: 'Invite sent',
-        color: 'var(--amber-core)',
-        icon: 'mail',
-        title: email
-            ? `Login email: ${email}. Run supabase_setup_v9 in Supabase SQL Editor, then refresh.`
-            : 'Login invite pending.',
-    };
+    // Auth status not loaded (RPC failed or skipped) — avoid misleading "Invite sent".
+    return null;
 }
 
 /** Attach _authStatus from admin RPC (no-op if no auth ids). */

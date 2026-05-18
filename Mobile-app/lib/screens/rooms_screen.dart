@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/environment_data.dart';
+import '../providers/auth_provider.dart';
 import '../providers/supabase_data_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -17,23 +18,70 @@ class _Room {
   final double top;
   final double w;
   final double h;
-  const _Room(this.id, this.label, this.icon, this.color,
-      this.left, this.top, this.w, this.h);
+  const _Room(
+    this.id,
+    this.label,
+    this.icon,
+    this.color,
+    this.left,
+    this.top,
+    this.w,
+    this.h,
+  );
 }
 
 const _rooms = <_Room>[
-  _Room('living', 'Living Room', Icons.weekend, Color(0xFF7C6FFF),
-      2, 2, 36, 45),
-  _Room('kitchen', 'Kitchen', Icons.countertops, Color(0xFFFF6B35),
-      40, 2, 28, 45),
-  _Room('garden', 'Garden', Icons.local_florist, Color(0xFF52B788),
-      70, 2, 28, 45),
-  _Room('bedroom', 'Master Bedroom', Icons.bed, Color(0xFF00D4FF),
-      2, 51, 36, 46),
-  _Room('entrance', 'Entrance', Icons.lock, Color(0xFF00E5A0),
-      40, 51, 17, 46),
-  _Room('bathroom', 'Bathroom', Icons.shower, Color(0xFF3B9EFF),
-      59, 51, 39, 46),
+  _Room(
+    'living',
+    'Living Room',
+    Icons.weekend,
+    Color(0xFF7C6FFF),
+    2,
+    2,
+    36,
+    45,
+  ),
+  _Room(
+    'kitchen',
+    'Kitchen',
+    Icons.countertops,
+    Color(0xFFFF6B35),
+    40,
+    2,
+    28,
+    45,
+  ),
+  _Room(
+    'garden',
+    'Garden',
+    Icons.local_florist,
+    Color(0xFF52B788),
+    70,
+    2,
+    28,
+    45,
+  ),
+  _Room(
+    'bedroom',
+    'Master Bedroom',
+    Icons.bed,
+    Color(0xFF00D4FF),
+    2,
+    51,
+    36,
+    46,
+  ),
+  _Room('entrance', 'Entrance', Icons.lock, Color(0xFF00E5A0), 40, 51, 17, 46),
+  _Room(
+    'bathroom',
+    'Bathroom',
+    Icons.shower,
+    Color(0xFF3B9EFF),
+    59,
+    51,
+    39,
+    46,
+  ),
 ];
 
 const _roomIds = <String>{
@@ -71,8 +119,7 @@ class _SensorIconCfg {
 }
 
 const _sensorIcons = <String, _SensorIconCfg>{
-  'temperature':
-      _SensorIconCfg(Icons.thermostat, _sensorTempColor),
+  'temperature': _SensorIconCfg(Icons.thermostat, _sensorTempColor),
   'humidity': _SensorIconCfg(Icons.water_drop, _sensorHumidColor),
   'smoke': _SensorIconCfg(Icons.cloud, _sensorSmokeColor),
   'water': _SensorIconCfg(Icons.grass, _sensorWaterColor),
@@ -111,6 +158,7 @@ class RoomsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.tokens;
     final data = context.watch<SupabaseDataProvider>();
+    final isAdmin = context.watch<AuthProvider>().isAdmin;
     final isLoading = data.loading && data.sensorReadings.isEmpty;
 
     final groupsByRoom = _buildGroups(data);
@@ -124,14 +172,20 @@ class RoomsScreen extends StatelessWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
             children: [
-              Text('Rooms',
-                  style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: tokens.textPrimary)),
+              Text(
+                'Rooms',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: tokens.textPrimary,
+                ),
+              ),
               const SizedBox(height: 4),
               Text(
-                'Tap a room to manage its devices and reassign sensors',
+                // Web parity: devices UPDATE (room reassign) is admin-only.
+                isAdmin
+                    ? 'Tap a room to manage its devices and reassign sensors'
+                    : 'Tap a room to inspect its devices and sensors · View-only',
                 style: TextStyle(fontSize: 13, color: tokens.textMuted),
               ),
               const SizedBox(height: 20),
@@ -173,17 +227,18 @@ class RoomsScreen extends StatelessWidget {
     byDevice.forEach((deviceId, sensors) {
       final device = devicesById[deviceId];
       final roomId = _resolveRoom(device);
-      result.putIfAbsent(roomId, () => []).add(_DeviceGroup(
-            id: deviceId,
-            device: device,
-            sensors: sensors,
-          ));
+      result
+          .putIfAbsent(roomId, () => [])
+          .add(_DeviceGroup(id: deviceId, device: device, sensors: sensors));
     });
     return result;
   }
 
   void _showRoomSheet(
-      BuildContext context, _Room room, List<_DeviceGroup> groups) {
+    BuildContext context,
+    _Room room,
+    List<_DeviceGroup> groups,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -199,10 +254,7 @@ class _BlueprintCanvas extends StatelessWidget {
   final Map<String, List<_DeviceGroup>> groupsByRoom;
   final void Function(_Room room) onRoomTap;
 
-  const _BlueprintCanvas({
-    required this.groupsByRoom,
-    required this.onRoomTap,
-  });
+  const _BlueprintCanvas({required this.groupsByRoom, required this.onRoomTap});
 
   @override
   Widget build(BuildContext context) {
@@ -229,8 +281,10 @@ class _BlueprintCanvas extends StatelessWidget {
                 return Stack(
                   children: _rooms.map((room) {
                     final groups = groupsByRoom[room.id] ?? const [];
-                    final sensorCount =
-                        groups.fold<int>(0, (s, g) => s + g.sensors.length);
+                    final sensorCount = groups.fold<int>(
+                      0,
+                      (s, g) => s + g.sensors.length,
+                    );
                     return Positioned(
                       left: c.maxWidth * (room.left / 100),
                       top: c.maxHeight * (room.top / 100),
@@ -301,8 +355,7 @@ class _RoomTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: room.color.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(10),
-            border:
-                Border.all(color: tokens.blueprintRoomBorder, width: 1),
+            border: Border.all(color: tokens.blueprintRoomBorder, width: 1),
           ),
           child: LayoutBuilder(
             builder: (context, c) {
@@ -333,8 +386,7 @@ class _RoomTile extends StatelessWidget {
                             color: room.color.withValues(alpha: 0.22),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child:
-                              Icon(room.icon, size: 11, color: room.color),
+                          child: Icon(room.icon, size: 11, color: room.color),
                         ),
                         const SizedBox(width: 6),
                         if (sensorCount > 0)
@@ -474,8 +526,7 @@ class _RoomSheet extends StatelessWidget {
       builder: (_, scroll) => Container(
         decoration: BoxDecoration(
           color: tokens.bgSurface,
-          borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           border: Border.all(color: tokens.borderSoft),
         ),
         child: Column(
@@ -506,16 +557,21 @@ class _RoomSheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(room.label,
-                            style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: tokens.textPrimary)),
+                        Text(
+                          room.label,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: tokens.textPrimary,
+                          ),
+                        ),
                         Text(
                           '${groups.length} device${groups.length == 1 ? '' : 's'} · '
                           '${groups.fold<int>(0, (s, g) => s + g.sensors.length)} sensors',
                           style: TextStyle(
-                              fontSize: 12.5, color: tokens.textMuted),
+                            fontSize: 12.5,
+                            color: tokens.textMuted,
+                          ),
                         ),
                       ],
                     ),
@@ -535,10 +591,8 @@ class _RoomSheet extends StatelessWidget {
                       controller: scroll,
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       itemCount: groups.length,
-                      itemBuilder: (_, i) => _DeviceCard(
-                        group: groups[i],
-                        currentRoomId: room.id,
-                      ),
+                      itemBuilder: (_, i) =>
+                          _DeviceCard(group: groups[i], currentRoomId: room.id),
                     ),
             ),
           ],
@@ -561,16 +615,17 @@ class _Empty extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.devices_other,
-                size: 56, color: tokens.textWhisper),
+            Icon(Icons.devices_other, size: 56, color: tokens.textWhisper),
             const SizedBox(height: 12),
-            Text('No devices in $roomLabel yet',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: tokens.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                )),
+            Text(
+              'No devices in $roomLabel yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: tokens.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 4),
             Text(
               'Move a device from another room using the dropdown.',
@@ -614,8 +669,11 @@ class _DeviceCard extends StatelessWidget {
                   color: tokens.emberGlow,
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(Icons.devices_other,
-                    color: tokens.emberCore, size: 16),
+                child: Icon(
+                  Icons.devices_other,
+                  color: tokens.emberCore,
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -634,8 +692,7 @@ class _DeviceCard extends StatelessWidget {
                     ),
                     Text(
                       '${group.sensors.length} sensor${group.sensors.length == 1 ? '' : 's'}',
-                      style: TextStyle(
-                          fontSize: 11, color: tokens.textMuted),
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     ),
                   ],
                 ),
@@ -673,9 +730,10 @@ class _DeviceCard extends StatelessWidget {
                     ? Text(
                         'Orphan reading — no device record',
                         style: TextStyle(
-                            fontSize: 11.5,
-                            color: tokens.textWhisper,
-                            fontStyle: FontStyle.italic),
+                          fontSize: 11.5,
+                          color: tokens.textWhisper,
+                          fontStyle: FontStyle.italic,
+                        ),
                       )
                     : _RoomDropdown(
                         deviceId: group.id,
@@ -732,8 +790,7 @@ class _SensorChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(cfg.icon,
-              size: 12, color: isAlert ? tokens.crimsonCore : color),
+          Icon(cfg.icon, size: 12, color: isAlert ? tokens.crimsonCore : color),
           const SizedBox(width: 5),
           Text(
             displayValue,
@@ -753,14 +810,14 @@ class _RoomDropdown extends StatelessWidget {
   final String deviceId;
   final String currentRoomId;
 
-  const _RoomDropdown({
-    required this.deviceId,
-    required this.currentRoomId,
-  });
+  const _RoomDropdown({required this.deviceId, required this.currentRoomId});
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+    // Web parity: devices UPDATE is admin-only (RLS), so non-admins see a
+    // disabled control with a "View-only" hint.
+    final isAdmin = context.watch<AuthProvider>().isAdmin;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
@@ -772,7 +829,11 @@ class _RoomDropdown extends StatelessWidget {
         value: currentRoomId,
         isExpanded: true,
         underline: const SizedBox.shrink(),
-        icon: Icon(Icons.expand_more, color: tokens.textSecondary, size: 18),
+        icon: Icon(
+          isAdmin ? Icons.expand_more : Icons.lock_outline,
+          color: tokens.textSecondary,
+          size: 18,
+        ),
         dropdownColor: tokens.bgSurface,
         style: TextStyle(
           fontSize: 12.5,
@@ -780,47 +841,47 @@ class _RoomDropdown extends StatelessWidget {
           color: tokens.textPrimary,
         ),
         items: _rooms
-            .map((r) => DropdownMenuItem<String>(
-                  value: r.id,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(r.icon, size: 14, color: r.color),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(r.label,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: tokens.textPrimary)),
+            .map(
+              (r) => DropdownMenuItem<String>(
+                value: r.id,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(r.icon, size: 14, color: r.color),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        isAdmin ? r.label : '${r.label} · View-only',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: tokens.textPrimary),
                       ),
-                    ],
-                  ),
-                ))
+                    ),
+                  ],
+                ),
+              ),
+            )
             .toList(),
-        onChanged: (next) async {
-          if (next == null || next == currentRoomId) return;
-          final messenger = ScaffoldMessenger.of(context);
-          final navigator = Navigator.of(context);
-          final ok = await context
-              .read<SupabaseDataProvider>()
-              .assignDeviceRoom(deviceId, next);
-          if (!ok) {
-            messenger.showSnackBar(
-              SnackBar(
-                content: const Text('Failed to update room. Try again.'),
-                backgroundColor: tokens.crimsonCore,
-              ),
-            );
-          } else {
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text(
-                    'Moved to ${_rooms.firstWhere((r) => r.id == next).label}'),
-              ),
-            );
-            // Close current bottom sheet so the device shows in its new room.
-            if (navigator.canPop()) navigator.pop();
-          }
-        },
+        onChanged: isAdmin
+            ? (next) async {
+                if (next == null || next == currentRoomId) return;
+                final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(context);
+                final ok = await context
+                    .read<SupabaseDataProvider>()
+                    .assignDeviceRoom(deviceId, next);
+                if (!ok) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: const Text('Failed to update room. Try again.'),
+                      backgroundColor: tokens.crimsonCore,
+                    ),
+                  );
+                } else {
+                  // Close current bottom sheet so the device shows in its new room.
+                  if (navigator.canPop()) navigator.pop();
+                }
+              }
+            : null,
       ),
     );
   }

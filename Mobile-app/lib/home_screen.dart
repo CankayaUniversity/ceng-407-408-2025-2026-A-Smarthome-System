@@ -6,11 +6,21 @@ import 'models/environment_data.dart';
 import 'providers/auth_provider.dart';
 import 'providers/supabase_data_provider.dart';
 import 'theme/app_theme.dart';
+import 'utils/event_meta.dart';
+import 'utils/rooms.dart';
 import 'widgets/hazard_card.dart';
-import 'camera_screen.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  final VoidCallback? onOpenCamera;
+
+  const HomeScreen({super.key, this.onOpenCamera});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String _activeRoomTab = 'all';
 
   @override
   Widget build(BuildContext context) {
@@ -19,9 +29,8 @@ class HomeScreen extends StatelessWidget {
     final supabaseData = context.watch<SupabaseDataProvider>();
 
     final profile = auth.profile;
-    final userName = profile?['name'] ??
-        auth.user?.userMetadata?['name'] ??
-        'User';
+    final userName =
+        profile?['name'] ?? auth.user?.userMetadata?['name'] ?? 'User';
 
     final tempReadings = supabaseData.temperatureReadings;
     final humReadings = supabaseData.humidityReadings;
@@ -31,23 +40,18 @@ class HomeScreen extends StatelessWidget {
 
     final avgTemp = _avg(tempReadings);
     final avgHum = _avg(humReadings);
-    final activeMotion =
-        motionReadings.where((s) => s.value == 1).length;
-    final criticalAlerts = supabaseData.events
-        .where((e) =>
-            (e['priority']?.toString().toLowerCase() == 'critical') &&
-            e['acknowledged'] != true)
-        .length;
+    final activeMotion = motionReadings.where((s) => s.value == 1).length;
+    final criticalAlerts = supabaseData.activeCriticalEventCount;
 
     final latestCamRow = supabaseData.latestCameraEvent;
     final latestCapture = latestCamRow != null
         ? FaceCapture.fromCameraEvent(latestCamRow)
         : null;
 
-    final recentEvents = supabaseData.events.take(3).toList();
+    final recentEvents = supabaseData.activeEvents.take(3).toList();
     final hasAnyAlert =
         smokeReadings.any((s) => s.value > 0) ||
-            waterReadings.any((s) => s.value == 0);
+        waterReadings.any((s) => s.value > 0);
 
     return Scaffold(
       backgroundColor: tokens.bgVoid,
@@ -56,8 +60,7 @@ class HomeScreen extends StatelessWidget {
           onRefresh: () => context.read<SupabaseDataProvider>().fetchAll(),
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -65,81 +68,93 @@ class HomeScreen extends StatelessWidget {
                 _Header(
                   userName: userName,
                   sensors: supabaseData.latestPerDeviceAndType.length,
+                  householdName: supabaseData.householdName,
                 ),
                 const SizedBox(height: 16),
 
                 // Camera Hero (21:9 aspect)
                 _CameraHero(
                   capture: latestCapture,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CameraScreen()),
-                  ),
+                  onTap: widget.onOpenCamera ?? () {},
                 ),
                 const SizedBox(height: 12),
 
                 // 2x2 stat grid — Security · Climate · Smoke · Water
-                LayoutBuilder(builder: (_, constraints) {
-                  final w = (constraints.maxWidth - 12) / 2;
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      SizedBox(
-                        width: w,
-                        child: _StatCard(
-                          icon: Icons.shield,
-                          label: 'SECURITY',
-                          accent: tokens.violetCore,
-                          alert: criticalAlerts > 0,
-                          rows: [
-                            _StatRow('Motion', '$activeMotion zones'),
-                            _StatRow('Alerts', '$criticalAlerts active'),
-                          ],
+                LayoutBuilder(
+                  builder: (_, constraints) {
+                    final w = (constraints.maxWidth - 12) / 2;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        SizedBox(
+                          width: w,
+                          child: _StatCard(
+                            icon: Icons.shield,
+                            label: 'SECURITY',
+                            accent: tokens.violetCore,
+                            alert: criticalAlerts > 0,
+                            rows: [
+                              _StatRow('Motion', '$activeMotion zones'),
+                              _StatRow('Alerts', '$criticalAlerts active'),
+                            ],
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: w,
-                        child: _StatCard(
-                          icon: Icons.thermostat,
-                          label: 'CLIMATE',
-                          accent: tokens.emberCore,
-                          alert: false,
-                          rows: [
-                            _StatRow('Avg Temp',
-                                '${avgTemp.toStringAsFixed(1)}°C'),
-                            _StatRow('Avg Hum',
-                                '${avgHum.toStringAsFixed(0)}%'),
-                          ],
+                        SizedBox(
+                          width: w,
+                          child: _StatCard(
+                            icon: Icons.thermostat,
+                            label: 'CLIMATE',
+                            accent: tokens.emberCore,
+                            alert: false,
+                            rows: [
+                              _StatRow(
+                                'Avg Temp',
+                                '${avgTemp.toStringAsFixed(1)}°C',
+                              ),
+                              _StatRow(
+                                'Avg Hum',
+                                '${avgHum.toStringAsFixed(0)}%',
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: w,
-                        child: HazardCard(
-                          icon: Icons.cloud,
-                          label: 'SMOKE',
-                          sensors: smokeReadings,
-                          accent: tokens.sensorSmoke,
-                          alertText: 'ALERT',
+                        SizedBox(
+                          width: w,
+                          child: HazardCard(
+                            icon: Icons.cloud,
+                            label: 'SMOKE',
+                            sensors: smokeReadings,
+                            accent: tokens.sensorSmoke,
+                            alertText: 'ALERT',
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: w,
-                        child: HazardCard(
-                          icon: Icons.water_drop,
-                          label: 'WATER',
-                          sensors: waterReadings,
-                          accent: tokens.sensorWater,
-                          alertText: 'LEAK',
+                        SizedBox(
+                          width: w,
+                          child: HazardCard(
+                            icon: Icons.water_drop,
+                            label: 'WATER',
+                            sensors: waterReadings,
+                            accent: tokens.sensorWater,
+                            alertText: 'LEAK',
+                          ),
                         ),
-                      ),
-                    ],
-                  );
-                }),
+                      ],
+                    );
+                  },
+                ),
                 const SizedBox(height: 20),
 
                 // Briefing banner
                 _BriefingBanner(hasAlert: hasAnyAlert),
+                const SizedBox(height: 20),
+
+                _EnvironmentalSensors(
+                  sensors: supabaseData.latestPerDeviceAndType,
+                  devicesById: supabaseData.devicesById,
+                  activeTab: _activeRoomTab,
+                  onTabChanged: (id) => setState(() => _activeRoomTab = id),
+                ),
                 const SizedBox(height: 20),
 
                 // Recent Alerts strip
@@ -172,18 +187,262 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+class _EnvironmentalSensors extends StatelessWidget {
+  final List<SensorReading> sensors;
+  final Map<String, Map<String, dynamic>> devicesById;
+  final String activeTab;
+  final ValueChanged<String> onTabChanged;
+
+  const _EnvironmentalSensors({
+    required this.sensors,
+    required this.devicesById,
+    required this.activeTab,
+    required this.onTabChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final filtered = sensors.where((s) {
+      final roomId = resolveRoom(devicesById[s.deviceId]);
+      return matchesRoomTab(roomId, activeTab);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'ENVIRONMENTAL SENSORS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textSecondary,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final tab in dashboardRoomTabs)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    selected: activeTab == tab.id,
+                    label: Text(tab.label),
+                    onSelected: (_) => onTabChanged(tab.id),
+                    selectedColor: tokens.textPrimary,
+                    backgroundColor: Colors.transparent,
+                    labelStyle: TextStyle(
+                      color: activeTab == tab.id
+                          ? tokens.bgBase
+                          : tokens.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    side: BorderSide(
+                      color: activeTab == tab.id
+                          ? Colors.transparent
+                          : tokens.borderSoft,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (filtered.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: tokens.bgSurface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: tokens.borderSoft),
+            ),
+            child: Text(
+              activeTab == 'all'
+                  ? 'No sensor readings yet.'
+                  : 'No sensors in ${roomLabel(activeTab)}.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: tokens.textMuted, fontSize: 12.5),
+            ),
+          )
+        else
+          LayoutBuilder(
+            builder: (_, constraints) {
+              final w = (constraints.maxWidth - 10) / 2;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final sensor in filtered)
+                    SizedBox(
+                      width: w,
+                      child: _MiniSensorCard(
+                        sensor: sensor,
+                        device: devicesById[sensor.deviceId],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _MiniSensorCard extends StatelessWidget {
+  final SensorReading sensor;
+  final Map<String, dynamic>? device;
+
+  const _MiniSensorCard({required this.sensor, required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final roomId = resolveRoom(device);
+    final deviceName = device?['name']?.toString() ?? roomLabel(roomId);
+    final isAlert = sensor.isAlert;
+    final meta = _sensorMeta(sensor.sensorType, tokens);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tokens.bgSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isAlert
+              ? tokens.crimsonCore.withValues(alpha: 0.35)
+              : tokens.borderSoft,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: meta.color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(meta.icon, size: 15, color: meta.color),
+              ),
+              const Spacer(),
+              Text(
+                _displayValue(sensor),
+                style: TextStyle(
+                  color: isAlert ? tokens.crimsonCore : meta.color,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            meta.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: tokens.textPrimary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            deviceName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: tokens.textMuted, fontSize: 10.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _displayValue(SensorReading s) {
+    final type = s.sensorType.toLowerCase();
+    if (type == 'water') return s.value > 0 ? 'Leak' : 'Dry';
+    if (type == 'motion' || type == 'door') {
+      return s.value > 0 ? 'Active' : 'Clear';
+    }
+    if (s.unit.isNotEmpty && s.unit != 'status') {
+      return '${s.value.toStringAsFixed(1)}${s.unit}';
+    }
+    return s.value.toStringAsFixed(1);
+  }
+
+  _SensorMeta _sensorMeta(String type, AppTokens tokens) {
+    switch (type.toLowerCase()) {
+      case 'temperature':
+        return _SensorMeta('Temperature', Icons.thermostat, tokens.sensorTemp);
+      case 'humidity':
+        return _SensorMeta('Humidity', Icons.water_drop, tokens.sensorHumid);
+      case 'smoke':
+        return _SensorMeta(
+          'Smoke',
+          Icons.local_fire_department,
+          tokens.sensorSmoke,
+        );
+      case 'water':
+        return _SensorMeta('Water', Icons.waves, tokens.sensorWater);
+      case 'motion':
+        return _SensorMeta('Motion', Icons.visibility, tokens.violetCore);
+      case 'door':
+        return _SensorMeta('Door', Icons.door_front_door, tokens.jadeCore);
+      case 'co2':
+        return _SensorMeta('CO2', Icons.air, tokens.cyanCore);
+      default:
+        return _SensorMeta(
+          type.isEmpty ? 'Sensor' : type,
+          Icons.sensors,
+          tokens.textSecondary,
+        );
+    }
+  }
+}
+
+class _SensorMeta {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _SensorMeta(this.label, this.icon, this.color);
+}
+
 // ─── Header ─────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
   final String userName;
   final int sensors;
-  const _Header({required this.userName, required this.sensors});
+  final String householdName;
+  const _Header({
+    required this.userName,
+    required this.sensors,
+    required this.householdName,
+  });
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Column(
@@ -223,17 +482,58 @@ class _Header extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     '$sensors sensors active',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: tokens.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: tokens.textMuted),
                   ),
                 ],
               ),
             ],
           ),
         ),
+        // Web parity: Sidebar shows the household name beside the user.
+        _HouseholdPill(name: householdName),
       ],
+    );
+  }
+}
+
+class _HouseholdPill extends StatelessWidget {
+  final String name;
+  const _HouseholdPill({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 160),
+      child: Container(
+        margin: const EdgeInsets.only(left: 8, top: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: tokens.bgSurface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: tokens.borderSoft),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.home_rounded, size: 14, color: tokens.emberCore),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: tokens.textPrimary,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -302,7 +602,9 @@ class _CameraHero extends StatelessWidget {
                 left: 12,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: tokens.crimsonCore.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(20),
@@ -333,27 +635,36 @@ class _CameraHero extends StatelessWidget {
                 ),
               ),
 
-              // Top-right classification badge
+              // Top-right classification badge.
+              // Web parity: when an unknown is clustered we show the profile
+              // label (e.g. "UNKNOWN #3") instead of a flat "UNKNOWN".
               if (capture != null)
                 Positioned(
                   top: 12,
                   right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: capture!.isResident
-                          ? tokens.jadeCore.withValues(alpha: 0.9)
-                          : tokens.crimsonCore.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      capture!.isResident ? 'RESIDENT' : 'UNKNOWN',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: capture!.isResident
+                            ? tokens.jadeCore.withValues(alpha: 0.9)
+                            : tokens.crimsonCore.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        capture!.displayName.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                   ),
@@ -405,18 +716,18 @@ class _CameraHero extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            tokens.bgElevated,
-            tokens.bgBase,
-          ],
+          colors: [tokens.bgElevated, tokens.bgBase],
         ),
       ),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.videocam_off_outlined,
-                size: 28, color: Colors.white.withValues(alpha: 0.5)),
+            Icon(
+              Icons.videocam_off_outlined,
+              size: 28,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: 6),
             Text(
               text,
@@ -502,29 +813,28 @@ class _StatCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          ...rows.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      r.label,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: tokens.textMuted,
-                      ),
+          ...rows.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    r.label,
+                    style: TextStyle(fontSize: 11, color: tokens.textMuted),
+                  ),
+                  Text(
+                    r.value,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: tokens.textPrimary,
                     ),
-                    Text(
-                      r.value,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: tokens.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -619,30 +929,27 @@ class _AlertRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
-    final eventType =
-        (event['event_type'] ?? event['type'] ?? '').toString();
+    final eventType = (event['event_type'] ?? event['type'] ?? '').toString();
     final message = event['message']?.toString() ?? eventType;
-    final createdAt =
-        DateTime.tryParse(event['created_at']?.toString() ?? '');
+    final createdAt = DateTime.tryParse(event['created_at']?.toString() ?? '');
 
     IconData icon;
     Color color;
-    switch (eventType.toLowerCase()) {
-      case 'fire_alert':
-        icon = Icons.local_fire_department;
+    final meta = getEventMeta(eventType);
+    icon = meta.icon;
+    switch (meta.tone) {
+      case EventTone.critical:
         color = tokens.crimsonCore;
         break;
-      case 'flood':
-        icon = Icons.water_drop;
-        color = tokens.sensorWater;
+      case EventTone.warning:
+        color = tokens.amberCore;
         break;
-      case 'stranger_detected':
-        icon = Icons.person;
-        color = tokens.emberCore;
+      case EventTone.success:
+        color = tokens.jadeCore;
         break;
-      default:
-        icon = Icons.notifications;
+      case EventTone.info:
         color = tokens.textSecondary;
+        break;
     }
 
     return Container(

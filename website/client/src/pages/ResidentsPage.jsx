@@ -122,9 +122,7 @@ const ResidentsPage = () => {
     const fetchResidents = async () => {
         setLoading(true);
         let rows = await loadResidentsRows();
-        if (isAdmin) {
-            rows = await attachResidentAuthStatus(supabase, rows);
-        }
+        rows = await attachResidentAuthStatus(supabase, rows);
         setResidents(rows);
         setLoading(false);
     };
@@ -133,16 +131,14 @@ const ResidentsPage = () => {
         setRefreshing(true);
         try {
             let rows = await loadResidentsRows();
-            if (isAdmin) {
-                rows = await attachResidentAuthStatus(supabase, rows);
-            }
+            rows = await attachResidentAuthStatus(supabase, rows);
             setResidents(rows);
         } finally {
             setRefreshing(false);
         }
     };
 
-    useEffect(() => { fetchResidents(); }, [isAdmin]);
+    useEffect(() => { fetchResidents(); }, []);
 
     const resetModal = () => {
         setShowModal(false);

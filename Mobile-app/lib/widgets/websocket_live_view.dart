@@ -11,10 +11,14 @@ class WebSocketLiveView extends StatefulWidget {
   final String url;
   final BoxFit fit;
 
+  /// When `false`, shows standby and does not connect (web LIVE/STOP parity).
+  final bool enabled;
+
   const WebSocketLiveView({
     super.key,
     required this.url,
     this.fit = BoxFit.cover,
+    this.enabled = true,
   });
 
   @override
@@ -44,7 +48,23 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
   @override
   void initState() {
     super.initState();
-    _connect();
+    if (widget.enabled) _connect();
+  }
+
+  @override
+  void didUpdateWidget(covariant WebSocketLiveView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled != oldWidget.enabled) {
+      if (widget.enabled) {
+        _reconnectDelay = 1;
+        _connect();
+      } else {
+        _teardown();
+      }
+    } else if (widget.url != oldWidget.url && widget.enabled) {
+      _reconnectDelay = 1;
+      _connect();
+    }
   }
 
   @override
@@ -56,8 +76,24 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
     super.dispose();
   }
 
+  void _teardown() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _cleanup();
+    if (mounted) {
+      setState(() {
+        _handshakeDone = false;
+        _hasFrame = false;
+        _connecting = false;
+        _frameBytes = null;
+        _fps = 0;
+        _lastError = null;
+      });
+    }
+  }
+
   Future<void> _connect() async {
-    if (!mounted) return;
+    if (!mounted || !widget.enabled) return;
     _cleanup();
 
     setState(() {
@@ -74,7 +110,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
       _channel = WebSocketChannel.connect(uri);
       await _channel!.ready;
 
-      if (!mounted) return;
+      if (!mounted || !widget.enabled) return;
 
       _channel!.sink.add(jsonEncode({'role': 'viewer'}));
       _handshakeDone = true;
@@ -88,7 +124,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
 
       _frameWaitTimer?.cancel();
       _frameWaitTimer = Timer(_firstFrameTimeout, () {
-        if (!mounted || _hasFrame) return;
+        if (!mounted || !widget.enabled || _hasFrame) return;
         debugPrint('[WebSocketLiveView] No frame within timeout');
         setState(() {
           _lastError =
@@ -122,7 +158,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
   }
 
   void _scheduleReconnect() {
-    if (!mounted) return;
+    if (!mounted || !widget.enabled) return;
     _cleanup();
     setState(() {
       _connecting = false;
@@ -132,7 +168,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: _reconnectDelay), () {
-      if (mounted) _connect();
+      if (mounted && widget.enabled) _connect();
     });
     _reconnectDelay = (_reconnectDelay * 2).clamp(1, _maxReconnectDelay);
   }
@@ -146,10 +182,7 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
           : utf8.decode(data as List<int>);
 
       if (payload.isEmpty) return;
-      if (payload.startsWith('{')) {
-        // Relay control/JSON — ignore for viewers
-        return;
-      }
+      if (payload.startsWith('{')) return;
 
       String b64 = payload;
       if (b64.startsWith('data:image')) {
@@ -205,6 +238,50 @@ class _WebSocketLiveViewState extends State<WebSocketLiveView> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+
+    if (!widget.enabled) {
+      return Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [tokens.bgElevated, tokens.bgBase],
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.videocam_outlined,
+                  size: 40,
+                  color: Colors.white.withValues(alpha: 0.35),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Live feed is paused',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Press GO LIVE to start streaming',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     if (_hasFrame && _frameBytes != null) {
       return Stack(

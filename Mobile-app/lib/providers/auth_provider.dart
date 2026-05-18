@@ -10,6 +10,7 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = true;
   String? _error;
   String? _successMessage;
+  bool _isPasswordRecovery = false;
   StreamSubscription<AuthState>? _authSub;
 
   User? get user => _user;
@@ -19,15 +20,48 @@ class AuthProvider extends ChangeNotifier {
   String? get successMessage => _successMessage;
   bool get isAuthenticated => _user != null;
 
+  /// Web parity: `profile?.role === 'admin'`.
+  bool get isAdmin => (_profile?['role']?.toString() ?? '') == 'admin';
+
+  /// Web parity: `user.user_metadata.force_password_change === true`.
+  /// True when the resident has not yet rotated their invite password.
+  bool get forcePasswordChange {
+    if (_user == null) return false;
+    final meta = _user!.userMetadata;
+    return meta != null && meta['force_password_change'] == true;
+  }
+
+  /// Web parity: `AuthContext.isPasswordRecovery`.
+  /// True while the user is inside a Supabase `passwordRecovery` session
+  /// (deep link from a forgot-password / invite email).
+  bool get isPasswordRecovery => _isPasswordRecovery;
+
   AuthProvider() {
-    _authSub = SupabaseAuthService.onAuthStateChange.listen((authState) {
+    _authSub =
+        SupabaseAuthService.onAuthStateChange.listen((authState) async {
       final session = authState.session;
+      final event = authState.event;
+
+      // Password-recovery deep link: enter recovery mode, suppress the
+      // force-password modal so the dedicated UpdatePasswordScreen renders.
+      if (event == AuthChangeEvent.passwordRecovery) {
+        _user = session?.user;
+        _isPasswordRecovery = true;
+        _loading = false;
+        if (_user != null) {
+          await _loadProfile(_user!.id);
+        }
+        notifyListeners();
+        return;
+      }
+
       if (session != null) {
         _user = session.user;
-        _loadProfile(session.user.id);
+        await _loadProfile(session.user.id);
       } else {
         _user = null;
         _profile = null;
+        _isPasswordRecovery = false;
       }
       _loading = false;
       notifyListeners();
@@ -49,6 +83,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _loadProfile(String userId) async {
     _profile = await SupabaseAuthService.fetchProfile(userId);
     await FcmRegistrationService.syncForCurrentUser();
+    notifyListeners();
   }
 
   Future<bool> login(String email, String password) async {
@@ -118,7 +153,127 @@ class AuthProvider extends ChangeNotifier {
     await SupabaseAuthService.signOut();
     _user = null;
     _profile = null;
+    _isPasswordRecovery = false;
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin / invitation flow (web parity)
+  // ---------------------------------------------------------------------------
+
+  /// Admin creates a resident auth account and triggers the password-setup
+  /// email. Returns the new user's id on success.
+  Future<({bool success, String? userId, String? error})>
+      createResidentAccount({
+    required String name,
+    required String email,
+  }) async {
+    try {
+      final userId = await SupabaseAuthService.createResidentAccount(
+        name: name,
+        email: email,
+      );
+      return (success: true, userId: userId, error: null);
+    } on AuthException catch (e) {
+      return (
+        success: false,
+        userId: null,
+        error: _friendlyAuthError(e.message),
+      );
+    } catch (e) {
+      return (success: false, userId: null, error: e.toString());
+    }
+  }
+
+  /// Resident first-login password change. Updates Supabase auth password
+  /// and clears the `force_password_change` flag in user metadata.
+  Future<({bool success, String? error})> changePassword(
+      String newPassword) async {
+    try {
+      final response = await SupabaseAuthService.changePassword(newPassword);
+      _user = response.user ?? _user;
+      notifyListeners();
+      return (success: true, error: null);
+    } on AuthException catch (e) {
+      return (success: false, error: _friendlyAuthError(e.message));
+    } catch (e) {
+      return (success: false, error: e.toString());
+    }
+  }
+
+  /// Admin-only: delete an auth user via `delete_auth_user` RPC.
+  Future<({bool success, String? error})> deleteAuthUser(
+      String targetUserId) async {
+    try {
+      await SupabaseAuthService.deleteAuthUser(targetUserId);
+      return (success: true, error: null);
+    } catch (e) {
+      return (success: false, error: e.toString());
+    }
+  }
+
+  /// Admin-only: list every profile (relies on the admin RLS policy).
+  Future<List<Map<String, dynamic>>> fetchAllProfiles() {
+    return SupabaseAuthService.fetchAllProfiles();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Password recovery (web parity)
+  // ---------------------------------------------------------------------------
+
+  /// Web parity: `AuthContext.requestPasswordReset`.
+  /// Sends the recovery email; UI shows a generic success state regardless of
+  /// whether the address is registered (no account enumeration).
+  Future<({bool success, String? error})> requestPasswordReset(
+      String email) async {
+    try {
+      await SupabaseAuthService.requestPasswordReset(email);
+      return (success: true, error: null);
+    } on AuthException catch (e) {
+      return (success: false, error: _friendlyAuthError(e.message));
+    } catch (e) {
+      return (success: false, error: e.toString());
+    }
+  }
+
+  /// Web parity: `AuthContext.completePasswordRecovery`.
+  /// Persists the new password, clears `force_password_change`, signs the user
+  /// out so they re-authenticate. Resets local recovery state on success.
+  Future<({bool success, String? error})> completePasswordRecovery(
+      String newPassword) async {
+    try {
+      await SupabaseAuthService.completePasswordRecovery(newPassword);
+      _isPasswordRecovery = false;
+      _user = null;
+      _profile = null;
+      notifyListeners();
+      return (success: true, error: null);
+    } on AuthException catch (e) {
+      return (success: false, error: _friendlyAuthError(e.message));
+    } catch (e) {
+      return (success: false, error: e.toString());
+    }
+  }
+
+  /// Web parity: `AuthContext.changePasswordWithVerification`.
+  /// Used by Settings → Change Password (NOT the invite/recovery modal).
+  Future<({bool success, String? error})> changePasswordWithVerification({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await SupabaseAuthService.changePasswordWithVerification(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      _user = response.user ?? _user;
+      notifyListeners();
+      return (success: true, error: null);
+    } on AuthException catch (e) {
+      return (success: false, error: _friendlyAuthError(e.message));
+    } catch (e) {
+      return (success: false, error: e.toString());
+    }
   }
 
   void clearError() {
