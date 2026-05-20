@@ -394,6 +394,32 @@ def trigger_unknown_clustering_backfill(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/v1/unknown/backfill-best-match")
+def trigger_unknown_best_match_backfill(
+    device_id: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """
+    Fill best_match_resident_id on unknown event_faces (review queue closest names).
+    Pi: curl -X POST "http://127.0.0.1:8000/api/v1/unknown/backfill-best-match?device_id=UUID&limit=50"
+    """
+    try:
+        ensure_device_exists(device_id)
+        from app.services.unknown_best_match_backfill import run_unknown_best_match_backfill
+
+        summary = run_unknown_best_match_backfill(
+            supabase,
+            snapshot_bucket=SNAPSHOT_BUCKET,
+            limit=limit,
+        )
+        return {"status": "ok", **summary}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unknown best-match backfill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/v1/telemetry/sensors")
 def receive_sensor_telemetry(data: FullSensorData):
     """

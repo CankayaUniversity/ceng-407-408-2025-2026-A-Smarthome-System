@@ -18,13 +18,11 @@ import UnknownProfilePanel from '../components/Identity/UnknownProfilePanel';
 import SnapshotThumb from '../components/Identity/SnapshotThumb';
 import ModalOverlay from '../components/ModalOverlay';
 import { resolveSightingSnapshotPath } from '../utils/sightingSnapshot';
+import { EVENT_FACES_EMBED } from '../utils/supabaseEmbeds';
+import { getClosestResidentName } from '../utils/closestResident';
 
-const EVENT_FACE_SELECT = `
-  id, classification, match_score, resident_id, unknown_profile_id, camera_event_id,
-  best_match_resident_id,
-  camera_events(id, snapshot_path, created_at, event_id),
-  residents!resident_id(name),
-  unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status)
+const EVENT_FACE_SELECT = EVENT_FACES_EMBED + `,
+  camera_events(id, snapshot_path, created_at, event_id)
 `;
 
 const ACTION_SELECT = `
@@ -65,6 +63,7 @@ const IdentityPage = () => {
     const [residentDetections, setResidentDetections] = useState([]);
     const [galleryLoading, setGalleryLoading] = useState(false);
     const [clusterBackfillSaving, setClusterBackfillSaving] = useState(false);
+    const [bestMatchBackfillSaving, setBestMatchBackfillSaving] = useState(false);
     const [clusterStatus, setClusterStatus] = useState(null);
     const [toast, setToast] = useState(null);
 
@@ -413,6 +412,50 @@ const IdentityPage = () => {
         }
     };
 
+    const handleBestMatchBackfill = async () => {
+        const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
+        const deviceId = import.meta.env.VITE_DEVICE_ID;
+        if (!gatewayUrl || !deviceId) {
+            showToast('Add VITE_GATEWAY_URL and VITE_DEVICE_ID to website/client/.env, then restart dev server.', 'error');
+            return;
+        }
+        setBestMatchBackfillSaving(true);
+        const url = `${gatewayUrl.replace(/\/$/, '')}/api/v1/unknown/backfill-best-match?device_id=${deviceId}&limit=50`;
+        try {
+            const res = await fetch(url, { method: 'POST' });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detail = typeof body.detail === 'string'
+                    ? body.detail
+                    : JSON.stringify(body.detail || body.error || body);
+                showToast(
+                    res.status === 404
+                        ? `Gateway endpoint not found — pull latest Pi code and restart gateway. (${detail})`
+                        : `Gateway error ${res.status}: ${detail}`,
+                    'error',
+                );
+                return;
+            }
+            const updated = body.updated_ok ?? 0;
+            if (updated > 0) {
+                showToast(`Updated closest resident for ${updated} detection(s).`);
+            } else {
+                showToast(
+                    (body.candidates ?? 0) > 0
+                        ? 'Could not compute closest names (check Pi logs / snapshots).'
+                        : 'All items already have closest names, or none need backfill.',
+                    'error',
+                );
+            }
+            await loadAll();
+        } catch (err) {
+            showToast(`${err.message || 'Could not reach gateway'}.`, 'error');
+            console.error('Best-match backfill failed:', url, err);
+        } finally {
+            setBestMatchBackfillSaving(false);
+        }
+    };
+
     const handleUnlink = async (eventFaceId) => {
         if (!window.confirm('Mark this detection as unknown? The resident enrollment photo will not change.')) {
             return;
@@ -739,16 +782,32 @@ const IdentityPage = () => {
 
             {reviewQueue.length > 0 && (
                 <div className="card" style={{ marginBottom: 'var(--s5)', padding: 'var(--s5)', borderColor: 'rgba(255,176,32,0.2)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--s4)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 'var(--s4)' }}>
                         <AlertTriangle size={16} style={{ color: 'var(--amber-core)' }} />
                         <span style={{ fontWeight: 700, fontSize: 'var(--size-sm)' }}>Review queue</span>
                         <span className="badge badge-warning">{reviewQueue.length}</span>
-                        <span style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)' }}>Borderline match scores — may be misclassified residents</span>
+                        <span style={{ fontSize: 'var(--size-xs)', color: 'var(--text-muted)', flex: '1 1 200px' }}>
+                            Borderline scores — closest resident name is who the score is compared to
+                        </span>
+                        {isAdmin && canClusterViaGateway && (
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                disabled={bestMatchBackfillSaving}
+                                onClick={handleBestMatchBackfill}
+                                style={{ fontSize: 10, whiteSpace: 'nowrap', color: 'var(--amber-core)' }}
+                            >
+                                {bestMatchBackfillSaving
+                                    ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                                    : 'Fill closest names'}
+                            </button>
+                        )}
                     </div>
                     <div style={{ display: 'flex', gap: 'var(--s3)', overflowX: 'auto', paddingBottom: 4 }}>
                         {reviewQueue.map(face => {
                             const snap = face.camera_events?.snapshot_path;
                             const url = snap ? getPublicUrl('event-snapshots', snap) : null;
+                            const closestName = getClosestResidentName(face, residentNameById);
                             return (
                                 <button
                                     key={face.id}
@@ -768,11 +827,9 @@ const IdentityPage = () => {
                                     </div>
                                     <div style={{ padding: 'var(--s2)', fontSize: 10, color: 'var(--amber-core)', lineHeight: 1.35 }}>
                                         <div>score {face.match_score?.toFixed?.(2) ?? '—'}</div>
-                                        {face.best_match_resident_id && residentNameById.get(face.best_match_resident_id) && (
-                                            <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
-                                                closest: {residentNameById.get(face.best_match_resident_id)}
-                                            </div>
-                                        )}
+                                        <div style={{ color: closestName ? 'var(--text-secondary)' : 'var(--text-muted)', marginTop: 2 }}>
+                                            closest: {closestName || '—'}
+                                        </div>
                                     </div>
                                 </button>
                             );
@@ -958,8 +1015,8 @@ const IdentityPage = () => {
                         {assignTarget.match_score != null && (
                             <p style={{ fontSize: 'var(--size-xs)', color: 'var(--amber-core)', marginBottom: 'var(--s4)', lineHeight: 1.45 }}>
                                 Match score <strong>{Number(assignTarget.match_score).toFixed(2)}</strong>
-                                {assignTarget.best_match_resident_id && residentNameById.get(assignTarget.best_match_resident_id) && (
-                                    <> · closest to <strong>{residentNameById.get(assignTarget.best_match_resident_id)}</strong></>
+                                {getClosestResidentName(assignTarget, residentNameById) && (
+                                    <> · closest to <strong>{getClosestResidentName(assignTarget, residentNameById)}</strong></>
                                 )}
                             </p>
                         )}
