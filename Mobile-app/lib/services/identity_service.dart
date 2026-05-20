@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../utils/supabase_embeds.dart';
+
 /// Mobile parity for the web `IdentityPage.jsx` data layer.
 ///
 /// Wraps:
@@ -15,12 +17,7 @@ class IdentityService {
   static final SupabaseClient _client = Supabase.instance.client;
 
   /// Same shape as web `EVENT_FACE_SELECT`.
-  static const String _eventFaceSelect = '''
-id, classification, match_score, resident_id, unknown_profile_id, camera_event_id,
-camera_events(id, snapshot_path, created_at, event_id),
-residents(name),
-unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status)
-''';
+  static const String _eventFaceSelect = SupabaseEmbeds.eventFaceRow;
 
   /// Same shape as web `ACTION_SELECT`.
   static const String _actionSelect = '''

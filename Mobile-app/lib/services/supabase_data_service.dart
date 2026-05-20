@@ -3,6 +3,7 @@ import '../config/supabase_config.dart';
 import '../models/environment_data.dart';
 import '../models/face_capture.dart';
 import '../utils/event_meta.dart';
+import '../utils/supabase_embeds.dart';
 
 class SupabaseDataService {
   static final _client = Supabase.instance.client;
@@ -55,8 +56,7 @@ class SupabaseDataService {
   /// `unknown_face_profiles(...)` brings the clustered identity payload so
   /// the UI can render labels like "Unknown #3 · 5x seen" via
   /// [face_display.getDetectionDisplayName].
-  static const String _cameraEventSelect =
-      '*, events(*), event_faces(*, residents(name, id), unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status))';
+  static const String _cameraEventSelect = SupabaseEmbeds.cameraEvent;
 
   static Future<List<Map<String, dynamic>>> getCameraEvents({
     int limit = 20,
