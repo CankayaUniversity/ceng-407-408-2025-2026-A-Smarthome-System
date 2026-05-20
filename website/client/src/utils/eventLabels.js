@@ -1,5 +1,5 @@
 import {
-    Flame, Waves, Eye, ShieldCheck, DoorOpen, AlertTriangle, Bell, Wind,
+    Flame, Eye, ShieldCheck, DoorOpen, AlertTriangle, Bell, Wind, Sprout,
 } from 'lucide-react';
 
 const EVENT_META = {
@@ -33,16 +33,10 @@ const EVENT_META = {
         icon: ShieldCheck,
         tone: 'success',
     },
-    flood: {
-        title: 'Water leak detected',
-        short: 'Water leak',
-        icon: Waves,
-        tone: 'critical',
-    },
-    flood_cleared: {
-        title: 'Water leak cleared',
-        short: 'Leak cleared',
-        icon: Waves,
+    moisture_restored: {
+        title: 'Soil moisture restored',
+        short: 'Moisture OK',
+        icon: Sprout,
         tone: 'info',
     },
     motion_detected: {
@@ -60,7 +54,7 @@ const EVENT_META = {
     low_moisture: {
         title: 'Low soil moisture',
         short: 'Low moisture',
-        icon: Wind,
+        icon: Sprout,
         tone: 'warning',
     },
 };

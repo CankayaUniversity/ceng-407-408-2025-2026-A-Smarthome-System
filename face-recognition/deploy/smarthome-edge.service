@@ -1,0 +1,16 @@
+[Unit]
+Description=Smart Home Edge (sensors, camera, face, relay)
+After=network-online.target smarthome-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=adem
+WorkingDirectory=/home/adem/Desktop/ceng-407-408-2025-2026-A-Smarthome-System/face-recognition
+EnvironmentFile=/home/adem/Desktop/ceng-407-408-2025-2026-A-Smarthome-System/.env
+ExecStart=/home/adem/Desktop/ceng-407-408-2025-2026-A-Smarthome-System/face-recognition/venv/bin/python3 run_edge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

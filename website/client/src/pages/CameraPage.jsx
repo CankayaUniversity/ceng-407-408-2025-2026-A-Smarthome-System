@@ -12,6 +12,7 @@ import {
     collectUnknownProfilesFromEvents,
     buildProfileLabelMap,
 } from '../utils/faceDisplay';
+import { CAMERA_EVENT_EMBED } from '../utils/supabaseEmbeds';
 
 const HOVER_DELAY_MS = 250;
 
@@ -19,6 +20,7 @@ const CameraPage = () => {
     const { subscribe } = useRealtime();
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState(null);
     const [feedMode, setFeedMode] = useState('snapshot');
 
     const [hoverState, setHoverState] = useState(null); // { event, rect, url }
@@ -26,15 +28,25 @@ const CameraPage = () => {
 
     useEffect(() => {
         const fetchEvents = async () => {
+            setFetchError(null);
             try {
-                const { data } = await supabase
+                const { data, error } = await supabase
                     .from('camera_events')
-                    .select('*, events(*), event_faces(*, residents(name), unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status))')
+                    .select(CAMERA_EVENT_EMBED)
                     .order('created_at', { ascending: false })
                     .limit(20);
+                if (error) {
+                    console.error('[Surveillance] camera_events:', error);
+                    setFetchError(error.message);
+                    setEvents([]);
+                    return;
+                }
                 setEvents(data || []);
-            } catch (err) { console.error(err); }
-            finally { setLoading(false); }
+            } catch (err) {
+                console.error(err);
+                setFetchError(err?.message || 'Failed to load snapshots');
+                setEvents([]);
+            } finally { setLoading(false); }
         };
         fetchEvents();
     }, []);
@@ -43,7 +55,7 @@ const CameraPage = () => {
         try {
             const { data } = await supabase
                 .from('camera_events')
-                .select('*, events(*), event_faces(*, residents(name), unknown_face_profiles(id, display_label, sighting_count))')
+                .select(CAMERA_EVENT_EMBED)
                 .eq('id', eventId)
                 .single();
             if (data) {
@@ -141,11 +153,17 @@ const CameraPage = () => {
                     <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}>
                         {loading ? (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}><div className="spinner" /></div>
+                        ) : fetchError ? (
+                            <div className="empty-state" style={{ padding: 'var(--s10) var(--s4)' }}>
+                                <div className="empty-state-icon"><User size={36} /></div>
+                                <h3>Could not load detections</h3>
+                                <p style={{ fontSize: 'var(--size-xs)', color: 'var(--crimson-core)', wordBreak: 'break-word' }}>{fetchError}</p>
+                            </div>
                         ) : events.length === 0 ? (
                             <div className="empty-state" style={{ padding: 'var(--s10) var(--s4)' }}>
                                 <div className="empty-state-icon"><User size={36} /></div>
                                 <h3>No events yet</h3>
-                                <p>Face recognition events will appear here in real time.</p>
+                                <p>Face recognition events will appear here when motion is detected. If you recently ran event retention SQL, older rows may have been removed — new PIR triggers will repopulate this list.</p>
                             </div>
                         ) : (
                             events.map((ev, i) => {

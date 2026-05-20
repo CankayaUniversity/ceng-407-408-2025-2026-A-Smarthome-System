@@ -1,0 +1,16 @@
+[Unit]
+Description=Smart Home FastAPI Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=adem
+WorkingDirectory=/home/adem/Desktop/ceng-407-408-2025-2026-A-Smarthome-System/face-recognition
+EnvironmentFile=/home/adem/Desktop/ceng-407-408-2025-2026-A-Smarthome-System/.env
+ExecStart=/home/adem/Desktop/ceng-407-408-2025-2026-A-Smarthome-System/face-recognition/venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

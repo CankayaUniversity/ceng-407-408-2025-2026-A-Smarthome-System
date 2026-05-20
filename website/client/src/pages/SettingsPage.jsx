@@ -283,7 +283,7 @@ const SettingsPage = () => {
                                                 className="btn btn-danger btn-sm"
                                                 disabled={deletingId === p.id}
                                                 onClick={async () => {
-                                                    if (!confirm(`Delete account for "${p.name || p.email}"? This cannot be undone.`)) return;
+                                                    if (!confirm(`Delete login for "${p.name || p.email}"? Linked resident profiles will be kept but sign-in removed.`)) return;
                                                     setDeletingId(p.id);
                                                     setDeleteError(null);
                                                     const result = await deleteAuthUser(p.id);

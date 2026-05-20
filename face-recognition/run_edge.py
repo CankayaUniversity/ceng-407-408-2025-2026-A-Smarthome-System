@@ -343,6 +343,8 @@ def analyze_burst_and_upload(image_paths: list[str]):
                         "status": result.get("status", "unknown"),
                         "person_id": result.get("person_id"),
                         "matched": result.get("matched", False),
+                        "candidate_person_id": result.get("candidate_person_id"),
+                        "candidate_name": result.get("candidate_name"),
                     })
                 except Exception as e:
                     logger.warning("Recognition failed for bbox %s: %s", bbox, e)
@@ -408,6 +410,7 @@ def analyze_burst_and_upload(image_paths: list[str]):
                 face_count=face_count,
                 match_score=primary.get("confidence"),
                 bbox=primary.get("bbox"),
+                best_match_resident_id=primary.get("candidate_person_id"),
             )
 
     except Exception as exc:

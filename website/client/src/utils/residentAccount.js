@@ -29,12 +29,20 @@ export function isResidentAccountActive(authStatus) {
 
 /**
  * UI badge for login state (_authStatus from get_auth_users_status RPC).
+ * @param {object} resident
+ * @param {{ canViewAuthDetails?: boolean }} [options]
+ *   canViewAuthDetails — true for admins after attachResidentAuthStatus; false hides misleading "Invite sent".
  */
-export function getResidentAccountBadge(resident) {
+export function getResidentAccountBadge(resident, options = {}) {
+    const { canViewAuthDetails = false } = options;
     if (!residentHasLoginAccount(resident)) return null;
 
     const st = resident._authStatus;
     const email = resident.account_email;
+
+    if (!canViewAuthDetails) {
+        return null;
+    }
 
     if (st) {
         if (isTruthyFlag(st.force_password_change)) {

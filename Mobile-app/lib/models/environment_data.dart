@@ -4,7 +4,7 @@
 class SensorReading {
   final String id;
   final String? deviceId;
-  final String sensorType; // temperature, humidity, smoke, water
+  final String sensorType; // temperature, humidity, smoke, soil_moisture (legacy: water)
   final double value;
   final String unit; // C, %, status, ppm
   final DateTime recordedAt;
@@ -31,16 +31,26 @@ class SensorReading {
     );
   }
 
+  String get normalizedType =>
+      sensorType == 'water' ? 'soil_moisture' : sensorType;
+
   bool get isAlert {
-    switch (sensorType) {
+    switch (normalizedType) {
       case 'smoke':
         return value > 0;
-      case 'water':
-        // Web parity: water 1 = leak, 0 = dry.
-        return value > 0;
+      case 'soil_moisture':
+        // 1 = dry soil (needs watering), 0 = moist
+        return value >= 0.5;
       default:
         return false;
     }
+  }
+
+  String get displayLabel {
+    if (normalizedType == 'soil_moisture') {
+      return value >= 0.5 ? 'Dry' : 'Moist';
+    }
+    return value.toStringAsFixed(1);
   }
 
   @override

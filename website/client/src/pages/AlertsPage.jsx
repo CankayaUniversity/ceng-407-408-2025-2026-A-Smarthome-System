@@ -102,7 +102,7 @@ const AlertsPage = () => {
                 <div>
                     <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--size-3xl)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>Security Alerts</h1>
                     <p style={{ fontSize: 'var(--size-sm)', color: 'var(--text-secondary)', marginTop: 'var(--s2)', maxWidth: 480 }}>
-                        Smoke, water, and visitor events from your home. Acknowledge items once you have checked them.
+                        Smoke, soil moisture, and visitor events from your home. Acknowledge items once you have checked them.
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--s3)' }}>

@@ -29,7 +29,7 @@ class SupabaseDataService {
 
   /// Fetches the latest reading for each sensor type.
   static Future<Map<String, SensorReading>> getLatestPerSensorType() async {
-    final types = ['temperature', 'humidity', 'smoke', 'water'];
+    final types = ['temperature', 'humidity', 'smoke', 'soil_moisture', 'water'];
     final result = <String, SensorReading>{};
 
     final futures = types.map((type) async {
@@ -279,7 +279,12 @@ class SupabaseDataService {
   }
 
   static Future<void> deleteResident(String id) async {
-    await _client.from(SupabaseConfig.residentsTable).delete().eq('id', id);
+    final result = await _client.rpc('delete_resident_complete', params: {
+      'p_resident_id': id,
+    });
+    if (result is Map && result['success'] == false) {
+      throw Exception(result['error']?.toString() ?? 'Delete failed');
+    }
   }
 
   // ─── DEVICES ────────────────────────────────────────────────

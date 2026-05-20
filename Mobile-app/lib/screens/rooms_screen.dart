@@ -122,6 +122,7 @@ const _sensorIcons = <String, _SensorIconCfg>{
   'temperature': _SensorIconCfg(Icons.thermostat, _sensorTempColor),
   'humidity': _SensorIconCfg(Icons.water_drop, _sensorHumidColor),
   'smoke': _SensorIconCfg(Icons.cloud, _sensorSmokeColor),
+  'soil_moisture': _SensorIconCfg(Icons.grass, _sensorWaterColor),
   'water': _SensorIconCfg(Icons.grass, _sensorWaterColor),
   'motion': _SensorIconCfg(Icons.directions_walk, _sensorMotionColor),
 };
@@ -132,9 +133,11 @@ Color _sensorSmokeColor(AppTokens t) => t.sensorSmoke;
 Color _sensorWaterColor(AppTokens t) => t.sensorWater;
 Color _sensorMotionColor(AppTokens t) => t.sensorMotion;
 
-_SensorIconCfg _sicOf(String type) =>
-    _sensorIcons[type.toLowerCase()] ??
-    _SensorIconCfg(Icons.sensors, (t) => t.textSecondary);
+_SensorIconCfg _sicOf(String type) {
+  final key = type.toLowerCase() == 'water' ? 'soil_moisture' : type.toLowerCase();
+  return _sensorIcons[key] ??
+      _SensorIconCfg(Icons.sensors, (t) => t.textSecondary);
+}
 
 class _DeviceGroup {
   final String id;
@@ -762,8 +765,8 @@ class _SensorChip extends StatelessWidget {
 
     String displayValue;
     if (isStatus) {
-      if (reading.sensorType == 'water') {
-        displayValue = reading.value > 0 ? 'Moist' : 'Dry';
+      if (reading.normalizedType == 'soil_moisture') {
+        displayValue = reading.displayLabel;
       } else if (reading.sensorType == 'motion') {
         displayValue = reading.value == 1 ? 'Active' : 'Idle';
       } else {

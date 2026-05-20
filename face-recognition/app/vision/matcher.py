@@ -60,6 +60,15 @@ class FaceMatcher:
         ranked.sort(key=lambda m: m["distance"])
         return ranked
 
+    def _candidate_fields(self, ranked: list[dict]) -> dict:
+        if not ranked:
+            return {"candidate_person_id": None, "candidate_name": None}
+        top = ranked[0]
+        return {
+            "candidate_person_id": top.get("person_id"),
+            "candidate_name": top.get("name"),
+        }
+
     def find_best_match(self, query_embedding: list) -> dict:
         ranked = self._rank_matches(query_embedding)
 
@@ -70,9 +79,11 @@ class FaceMatcher:
                 "name": None,
                 "score": None,
                 "status": "unauthorized",
+                **self._candidate_fields([]),
             }
 
         best = ranked[0]
+        candidate = self._candidate_fields(ranked)
         best_distance = best["distance"]
         second_distance = ranked[1]["distance"] if len(ranked) > 1 else float("inf")
         margin = second_distance - best_distance
@@ -86,6 +97,7 @@ class FaceMatcher:
                 "name": None,
                 "score": score,
                 "status": "unauthorized",
+                **candidate,
             }
 
         if margin < self.min_margin:
@@ -108,6 +120,7 @@ class FaceMatcher:
                 "ambiguous": True,
                 "runner_up_name": runner_up if len(ranked) > 1 else None,
                 "runner_up_score": round(second_distance, 4) if len(ranked) > 1 else None,
+                **candidate,
             }
 
         return {
@@ -116,4 +129,5 @@ class FaceMatcher:
             "name": best["name"],
             "score": score,
             "status": "authorized",
+            **candidate,
         }

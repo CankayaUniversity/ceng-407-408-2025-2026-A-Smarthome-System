@@ -109,7 +109,8 @@ def upload_intelligent_snapshot(event_id: str, is_resident: bool,
                                 image_path: str, resident_id=None,
                                 face_count: int = 1,
                                 match_score: float | None = None,
-                                bbox=None):
+                                bbox=None,
+                                best_match_resident_id=None):
     params = {
         "event_id": event_id,
         "is_resident": str(is_resident).lower(),
@@ -117,6 +118,8 @@ def upload_intelligent_snapshot(event_id: str, is_resident: bool,
     }
     if resident_id:
         params["resident_id"] = resident_id
+    if best_match_resident_id:
+        params["best_match_resident_id"] = best_match_resident_id
     if match_score is not None:
         params["match_score"] = match_score
     if bbox is not None:

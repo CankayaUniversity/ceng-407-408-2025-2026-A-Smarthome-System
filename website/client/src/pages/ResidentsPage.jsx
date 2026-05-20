@@ -262,8 +262,24 @@ const ResidentsPage = () => {
 
     const handleDelete = async (id) => {
         if (!isAdmin) return;
-        if (!confirm('Remove this resident?')) return;
-        await supabase.from('residents').delete().eq('id', id);
+        const target = residents.find(r => r.id === id);
+        const hasLogin = target && residentHasLoginAccount(target);
+        const msg = hasLogin
+            ? 'Remove this resident and delete their login account? This cannot be undone.'
+            : 'Remove this resident?';
+        if (!confirm(msg)) return;
+
+        const { data, error } = await supabase.rpc('delete_resident_complete', {
+            p_resident_id: id,
+        });
+        if (error) {
+            setError(error.message);
+            return;
+        }
+        if (data?.success === false) {
+            setError(data.error || 'Delete failed');
+            return;
+        }
         setResidents(prev => prev.filter(r => r.id !== id));
     };
 
@@ -367,7 +383,9 @@ const ResidentsPage = () => {
                                         </button>
                                     )}
                                     {(() => {
-                                        const accountBadge = getResidentAccountBadge(r);
+                                        const accountBadge = getResidentAccountBadge(r, {
+                                            canViewAuthDetails: isAdmin,
+                                        });
                                         if (!accountBadge) return null;
                                         const BadgeIcon = accountBadge.icon === 'check'
                                             ? CheckCircle

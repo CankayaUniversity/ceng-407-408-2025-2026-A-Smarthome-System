@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import {
-    Thermometer, Droplets, Flame, Waves, Eye, Activity,
+    Thermometer, Droplets, Flame, Sprout, Eye, Activity,
     X, BarChart3, CheckCircle2, Sofa, Cpu,
     UtensilsCrossed, BedDouble, Lock, ShowerHead, Flower2, MapPin
 } from 'lucide-react';
@@ -24,10 +24,14 @@ const SIC = {
     temperature: { Icon: Thermometer, color: '#ff6b35' },
     humidity: { Icon: Droplets, color: '#00d4ff' },
     smoke: { Icon: Flame, color: '#ff3b5c' },
-    water: { Icon: Waves, color: '#3b9eff' },
+    soil_moisture: { Icon: Sprout, color: '#7cb342' },
+    water: { Icon: Sprout, color: '#7cb342' },
     motion: { Icon: Eye, color: '#9b59ff' },
 };
-function getSIC(type) { return SIC[type?.toLowerCase()] || { Icon: Activity, color: '#8892a4' }; }
+function getSIC(type) {
+    const key = type?.toLowerCase() === 'water' ? 'soil_moisture' : type?.toLowerCase();
+    return SIC[key] || { Icon: Activity, color: '#8892a4' };
+}
 
 function deviceToRoom(deviceName) {
     const n = (deviceName || '').toLowerCase();

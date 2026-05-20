@@ -6,6 +6,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { supabase, getPublicUrl } from '../../services/supabase';
 import { getProfileDisplayName } from '../../utils/faceDisplay';
 import ModalOverlay from '../ModalOverlay';
+import SnapshotThumb from './SnapshotThumb';
+import { resolveSightingSnapshotPath } from '../../utils/sightingSnapshot';
 
 export default function UnknownProfilePanel({
     profile,
@@ -164,14 +166,15 @@ export default function UnknownProfilePanel({
             <h3 style={{ fontSize: 'var(--size-sm)', fontWeight: 700, marginTop: 'var(--s5)', marginBottom: 'var(--s3)' }}>Sighting timeline</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(108px, 1fr))', gap: 'var(--s3)' }}>
                 {sightings.map(s => {
-                    const path = s.camera_events?.snapshot_path;
-                    const url = path ? getPublicUrl('event-snapshots', path) : null;
+                    const path = resolveSightingSnapshotPath(s);
                     const eventFaceId = s.event_faces?.id;
+                    const missingCam = !path && !s.camera_events?.id && !s.event_faces?.camera_events?.id;
                     return (
                         <div key={s.id} style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border-soft)', background: 'var(--bg-raised)' }}>
-                            <div style={{ aspectRatio: '1', background: '#0a0c10' }}>
-                                {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                            </div>
+                            <SnapshotThumb
+                                path={path}
+                                missingLabel={missingCam ? 'Link broken — run SQL 012' : 'File missing'}
+                            />
                             <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                                 <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
                                     {s.created_at ? formatDistanceToNow(new Date(s.created_at), { addSuffix: true }) : '—'}

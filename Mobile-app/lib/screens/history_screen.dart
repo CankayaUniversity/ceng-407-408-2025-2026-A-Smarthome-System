@@ -33,17 +33,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
       'color': tokens.sensorHumid,
     },
     {
-      'key': 'water',
-      'label': 'Water',
+      'key': 'soil_moisture',
+      'label': 'Soil moisture',
       'unit': '',
-      'icon': Icons.waves,
-      'color': tokens.sensorWater,
+      'icon': Icons.grass,
+      'color': tokens.sensorMoisture,
     },
     {
       'key': 'smoke',
       'label': 'Smoke',
       'unit': '',
-      'icon': Icons.local_fire_department,
+      'icon': Icons.cloud,
       'color': tokens.sensorSmoke,
     },
   ];
@@ -349,13 +349,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   String _formatValue(SensorReading r, String unit) {
     if (r.unit == 'status') {
-      if (r.sensorType == 'water') {
-        return r.value > 0 ? 'Leak' : 'Dry';
+      if (r.normalizedType == 'soil_moisture') {
+        return r.displayLabel;
       }
       return r.value > 0 ? 'Detected' : 'Clear';
-    }
-    if (r.sensorType == 'water') {
-      return r.value > 0 ? 'Leak' : 'Dry';
     }
     return '${r.value.toStringAsFixed(1)}${unit.isNotEmpty ? unit : ' ${r.unit}'}';
   }

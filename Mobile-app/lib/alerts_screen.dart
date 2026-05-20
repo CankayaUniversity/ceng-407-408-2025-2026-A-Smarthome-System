@@ -100,8 +100,13 @@ class _AlertsScreenState extends State<AlertsScreen> {
       'category': 'Security',
     },
     'low_moisture': {
-      'icon': Icons.air,
-      'color': tokens.amberCore,
+      'icon': Icons.grass,
+      'color': tokens.sensorMoisture,
+      'category': 'Environment',
+    },
+    'moisture_restored': {
+      'icon': Icons.grass,
+      'color': tokens.sensorMoisture,
       'category': 'Environment',
     },
     'system': {

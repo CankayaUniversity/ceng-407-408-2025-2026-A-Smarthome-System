@@ -401,7 +401,7 @@ def receive_sensor_telemetry(data: FullSensorData):
     - temperature
     - humidity
     - smoke
-    - water
+    - soil_moisture
     """
     try:
         ensure_device_exists(data.device_id)
@@ -427,7 +427,7 @@ def receive_sensor_telemetry(data: FullSensorData):
             },
             {
                 "device_id": data.device_id,
-                "sensor_type": "water",
+                "sensor_type": "soil_moisture",
                 "numeric_value": 1.0 if data.soil_dry else 0.0,
                 "unit": "status",
             },
@@ -498,6 +498,7 @@ async def upload_intelligent_snapshot(
     resident_id: Optional[str] = Query(None),
     face_count: int = Query(1),
     match_score: Optional[float] = Query(None),
+    best_match_resident_id: Optional[str] = Query(None),
     bbox: Optional[str] = Query(None),
     file: UploadFile = File(...),
 ):
@@ -556,15 +557,19 @@ async def upload_intelligent_snapshot(
 
         classification = "resident" if is_resident else "unknown"
 
+        face_insert = {
+            "camera_event_id": camera_event_id,
+            "resident_id": resident_id if is_resident else None,
+            "match_score": match_score,
+            "classification": classification,
+            "bbox": bbox_json,
+        }
+        if best_match_resident_id and not is_resident:
+            face_insert["best_match_resident_id"] = best_match_resident_id
+
         face_row = (
             supabase.table("event_faces")
-            .insert({
-                "camera_event_id": camera_event_id,
-                "resident_id": resident_id if is_resident else None,
-                "match_score": match_score,
-                "classification": classification,
-                "bbox": bbox_json,
-            })
+            .insert(face_insert)
             .execute()
         )
         event_face_id = face_row.data[0]["id"]

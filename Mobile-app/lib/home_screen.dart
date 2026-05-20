@@ -35,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final tempReadings = supabaseData.temperatureReadings;
     final humReadings = supabaseData.humidityReadings;
     final smokeReadings = supabaseData.smokeReadings;
-    final waterReadings = supabaseData.waterReadings;
+    final soilReadings = supabaseData.soilMoistureReadings;
     final motionReadings = supabaseData.motionReadings;
 
     final avgTemp = _avg(tempReadings);
@@ -51,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final recentEvents = supabaseData.activeEvents.take(3).toList();
     final hasAnyAlert =
         smokeReadings.any((s) => s.value > 0) ||
-        waterReadings.any((s) => s.value > 0);
+        soilReadings.any((s) => s.isAlert);
 
     return Scaffold(
       backgroundColor: tokens.bgVoid,
@@ -79,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // 2x2 stat grid — Security · Climate · Smoke · Water
+                // 2x2 stat grid — Security · Climate · Smoke · Soil moisture
                 LayoutBuilder(
                   builder: (_, constraints) {
                     final w = (constraints.maxWidth - 12) / 2;
@@ -132,11 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         SizedBox(
                           width: w,
                           child: HazardCard(
-                            icon: Icons.water_drop,
-                            label: 'WATER',
-                            sensors: waterReadings,
-                            accent: tokens.sensorWater,
-                            alertText: 'LEAK',
+                            icon: Icons.grass,
+                            label: 'SOIL',
+                            sensors: soilReadings,
+                            accent: tokens.sensorMoisture,
+                            alertText: 'DRY',
                           ),
                         ),
                       ],

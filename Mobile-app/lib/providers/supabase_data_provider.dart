@@ -63,7 +63,8 @@ class SupabaseDataProvider extends ChangeNotifier {
   SensorReading? get latestTemperature => _latestPerType['temperature'];
   SensorReading? get latestHumidity => _latestPerType['humidity'];
   SensorReading? get latestSmoke => _latestPerType['smoke'];
-  SensorReading? get latestWater => _latestPerType['water'];
+  SensorReading? get latestSoilMoisture =>
+      _latestPerType['soil_moisture'] ?? _latestPerType['water'];
 
   /// Returns latest reading per (device_id, sensor_type) pair.
   /// Web parity with `DashboardPage.fetchData` `latestByType` map.
@@ -82,8 +83,12 @@ class SupabaseDataProvider extends ChangeNotifier {
   List<SensorReading> get smokeReadings =>
       latestPerDeviceAndType.where((r) => r.sensorType == 'smoke').toList();
 
-  List<SensorReading> get waterReadings =>
-      latestPerDeviceAndType.where((r) => r.sensorType == 'water').toList();
+  List<SensorReading> get soilMoistureReadings => latestPerDeviceAndType
+      .where((r) => r.normalizedType == 'soil_moisture')
+      .toList();
+
+  @Deprecated('Use soilMoistureReadings')
+  List<SensorReading> get waterReadings => soilMoistureReadings;
 
   List<SensorReading> get temperatureReadings => latestPerDeviceAndType
       .where((r) => r.sensorType == 'temperature')
@@ -163,7 +168,10 @@ class SupabaseDataProvider extends ChangeNotifier {
   }
 
   List<SensorReading> readingsForType(String sensorType) {
-    return _sensorReadings.where((r) => r.sensorType == sensorType).toList();
+    final key = sensorType == 'water' ? 'soil_moisture' : sensorType;
+    return _sensorReadings
+        .where((r) => r.normalizedType == key)
+        .toList();
   }
 
   Future<void> fetchCameraEvents({int limit = 20}) async {

@@ -15,12 +15,15 @@ import {
     getDetectionSubtitle,
 } from '../utils/faceDisplay';
 import UnknownProfilePanel from '../components/Identity/UnknownProfilePanel';
+import SnapshotThumb from '../components/Identity/SnapshotThumb';
 import ModalOverlay from '../components/ModalOverlay';
+import { resolveSightingSnapshotPath } from '../utils/sightingSnapshot';
 
 const EVENT_FACE_SELECT = `
   id, classification, match_score, resident_id, unknown_profile_id, camera_event_id,
+  best_match_resident_id,
   camera_events(id, snapshot_path, created_at, event_id),
-  residents(name),
+  residents!resident_id(name),
   unknown_face_profiles(id, display_label, sighting_count, first_seen_at, status)
 `;
 
@@ -165,18 +168,88 @@ const IdentityPage = () => {
         setRefreshing(false);
     };
 
+    const enrichSightingsWithEventFaces = async (rows) => {
+        const missingFace = rows.filter(s => !s.event_faces?.id && s.camera_event_id);
+        if (!missingFace.length) return rows;
+
+        const camIds = [...new Set(missingFace.map(s => s.camera_event_id))];
+        const { data: faces, error } = await supabase
+            .from('event_faces')
+            .select(`
+              id, classification, match_score, best_match_resident_id, camera_event_id,
+              camera_events(id, snapshot_path, created_at)
+            `)
+            .in('camera_event_id', camIds)
+            .eq('classification', 'unknown');
+
+        if (error) {
+            console.warn('[Identity] enrichSightingsWithEventFaces:', error.message);
+            return rows;
+        }
+
+        const faceByCam = new Map();
+        (faces || []).forEach(f => {
+            if (f.camera_event_id && !faceByCam.has(f.camera_event_id)) {
+                faceByCam.set(f.camera_event_id, f);
+            }
+        });
+
+        return rows.map(s => {
+            if (s.event_faces?.id) return s;
+            const ef = faceByCam.get(s.camera_event_id);
+            return ef ? { ...s, event_faces: ef } : s;
+        });
+    };
+
+    const enrichSightingsWithAuditPaths = async (rows) => {
+        const orphans = rows.filter(s => !resolveSightingSnapshotPath(s) && s.event_faces?.id);
+        if (!orphans.length) return rows;
+
+        const faceIds = [...new Set(orphans.map(s => s.event_faces.id))];
+        const { data: actions } = await supabase
+            .from('face_label_actions')
+            .select('event_face_id, metadata, created_at')
+            .in('event_face_id', faceIds)
+            .order('created_at', { ascending: false });
+
+        const pathByFace = new Map();
+        (actions || []).forEach(a => {
+            const p = a.metadata?.snapshot_path;
+            if (p && !pathByFace.has(a.event_face_id)) pathByFace.set(a.event_face_id, p);
+        });
+
+        return rows.map(s => {
+            const fid = s.event_faces?.id;
+            const auditPath = fid ? pathByFace.get(fid) : null;
+            if (auditPath && !resolveSightingSnapshotPath(s)) {
+                return { ...s, _snapshot_path: auditPath };
+            }
+            return s;
+        });
+    };
+
     const loadSightings = async (profileId) => {
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('unknown_face_sightings')
             .select(`
-              id, match_distance, created_at,
+              id, match_distance, created_at, camera_event_id,
               camera_events(id, snapshot_path, created_at),
-              event_faces(id, classification, match_score, camera_event_id)
+              event_faces(
+                id, classification, match_score, camera_event_id,
+                camera_events(id, snapshot_path, created_at)
+              )
             `)
             .eq('unknown_face_profile_id', profileId)
             .order('created_at', { ascending: false })
             .limit(50);
-        setSightings(data || []);
+        if (error) {
+            console.warn('[Identity] loadSightings:', error.message);
+            setSightings([]);
+            return;
+        }
+        let enriched = await enrichSightingsWithEventFaces(data || []);
+        enriched = await enrichSightingsWithAuditPaths(enriched);
+        setSightings(enriched);
     };
 
     useEffect(() => {
@@ -381,7 +454,10 @@ const IdentityPage = () => {
             .select(EVENT_FACE_SELECT)
             .eq('id', eventFaceId)
             .single();
-        if (data) setAssignTarget(data);
+        if (data) {
+            setAssignTarget(data);
+            setAssignResidentId(data.best_match_resident_id || '');
+        }
     };
 
     const actionLabel = (action) => {
@@ -677,7 +753,11 @@ const IdentityPage = () => {
                                 <button
                                     key={face.id}
                                     type="button"
-                                    onClick={() => isAdmin && setAssignTarget(face)}
+                                    onClick={() => {
+                                        if (!isAdmin) return;
+                                        setAssignTarget(face);
+                                        setAssignResidentId(face.best_match_resident_id || '');
+                                    }}
                                     style={{
                                         flex: '0 0 120px', border: '1px solid var(--border-soft)', borderRadius: 'var(--r-lg)',
                                         overflow: 'hidden', background: 'var(--bg-raised)', cursor: isAdmin ? 'pointer' : 'default', padding: 0, textAlign: 'left',
@@ -686,8 +766,13 @@ const IdentityPage = () => {
                                     <div style={{ height: 90, background: '#0a0c10' }}>
                                         {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                                     </div>
-                                    <div style={{ padding: 'var(--s2)', fontSize: 10, color: 'var(--amber-core)' }}>
-                                        score {face.match_score?.toFixed?.(2) ?? '—'}
+                                    <div style={{ padding: 'var(--s2)', fontSize: 10, color: 'var(--amber-core)', lineHeight: 1.35 }}>
+                                        <div>score {face.match_score?.toFixed?.(2) ?? '—'}</div>
+                                        {face.best_match_resident_id && residentNameById.get(face.best_match_resident_id) && (
+                                            <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                                                closest: {residentNameById.get(face.best_match_resident_id)}
+                                            </div>
+                                        )}
                                     </div>
                                 </button>
                             );
@@ -814,11 +899,13 @@ const IdentityPage = () => {
                         </div>
                         <div style={{ maxHeight: 360, overflowY: 'auto' }}>
                             {recentUnknowns.length === 0 ? (
-                                <p style={{ padding: 'var(--s6)', fontSize: 'var(--size-sm)', color: 'var(--text-muted)', textAlign: 'center' }}>No recent unknown faces.</p>
+                                <p style={{ padding: 'var(--s6)', fontSize: 'var(--size-sm)', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.55 }}>
+                                    No faces with status <strong>unknown</strong> right now.
+                                    Many may show under <strong>Resident linked detections</strong> or in the activity log above after assign/unlink.
+                                    Use <strong>Revert</strong> on an assign action (not unlink) to move a detection back to unknown.
+                                </p>
                             ) : recentUnknowns.map(face => {
                                 const ev = { event_faces: [face] };
-                                const snap = face.camera_events?.snapshot_path;
-                                const url = snap ? getPublicUrl('event-snapshots', snap) : null;
                                 return (
                                     <div
                                         key={face.id}
@@ -827,8 +914,8 @@ const IdentityPage = () => {
                                             padding: 'var(--s3) var(--s5)', borderBottom: '1px solid var(--border-dim)',
                                         }}
                                     >
-                                        <div style={{ width: 44, height: 44, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-base)' }}>
-                                            {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                        <div style={{ width: 44, height: 44, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0 }}>
+                                            <SnapshotThumb path={face.camera_events?.snapshot_path} boxStyle={{ aspectRatio: 'unset', width: 44, height: 44 }} />
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ fontWeight: 600, fontSize: 'var(--size-sm)', color: face.unknown_profile_id ? 'var(--violet-core)' : 'var(--text-secondary)' }}>
@@ -868,6 +955,14 @@ const IdentityPage = () => {
                             Links this detection to the resident. The snapshot stays in storage as audit evidence.
                             Enrollment photo on Residents is <strong>not</strong> changed unless you opt in below.
                         </p>
+                        {assignTarget.match_score != null && (
+                            <p style={{ fontSize: 'var(--size-xs)', color: 'var(--amber-core)', marginBottom: 'var(--s4)', lineHeight: 1.45 }}>
+                                Match score <strong>{Number(assignTarget.match_score).toFixed(2)}</strong>
+                                {assignTarget.best_match_resident_id && residentNameById.get(assignTarget.best_match_resident_id) && (
+                                    <> · closest to <strong>{residentNameById.get(assignTarget.best_match_resident_id)}</strong></>
+                                )}
+                            </p>
+                        )}
                         {assignError && <div className="auth-error" style={{ marginBottom: 'var(--s4)' }}>{assignError}</div>}
                         <form onSubmit={handleAssign} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s4)' }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>

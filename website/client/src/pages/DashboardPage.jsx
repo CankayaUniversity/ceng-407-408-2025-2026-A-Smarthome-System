@@ -4,37 +4,32 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { getPublicUrl } from '../services/supabase';
 import {
-    Thermometer, Droplets, Flame, Waves, Activity,
+    Activity, Thermometer, Flame, Sprout,
     Eye, ShieldCheck, ShieldAlert,
-    Camera, Wifi, Wind,
-    DoorOpen, ChevronRight,
+    Camera, Wifi,
+    ChevronRight,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { DASHBOARD_ROOM_TABS, resolveRoom, matchesRoomTab, ROOM_LABELS } from '../utils/rooms';
 import { getEventMeta, getEventToneStyle } from '../utils/eventLabels';
+import {
+    getSensorConfig,
+    normalizeSensorType,
+    formatSensorDisplayValue,
+    isSensorAlert,
+} from '../utils/sensorConfig';
 
-const SENSOR_CONFIG = {
-    temperature: { icon: Thermometer, color: '#ff6b35', label: 'Temperature', unit: '°C' },
-    humidity: { icon: Droplets, color: '#00d4ff', label: 'Humidity', unit: '%' },
-    smoke: { icon: Flame, color: '#ff3b5c', label: 'Smoke', unit: '' },
-    water: { icon: Waves, color: '#3b9eff', label: 'Water', unit: '' },
-    motion: { icon: Eye, color: '#9b59ff', label: 'Motion', unit: '' },
-    door: { icon: DoorOpen, color: '#00e5a0', label: 'Door', unit: '' },
-    co2: { icon: Wind, color: '#a0f080', label: 'CO2', unit: 'ppm' },
-};
-function getSC(type) { return SENSOR_CONFIG[type?.toLowerCase()] || { icon: Activity, color: '#8892a4', label: type, unit: '' }; }
+function getSC(type) {
+    return getSensorConfig(type);
+}
 
 function MiniSensorCard({ sensor }) {
-    const cfg = getSC(sensor.sensor_type);
+    const sensorType = normalizeSensorType(sensor.sensor_type);
+    const cfg = getSC(sensorType);
     const Icon = cfg.icon;
     const val = sensor.numeric_value;
-    const isBoolean = sensor.sensor_type === 'motion' || sensor.sensor_type === 'door' || sensor.sensor_type === 'water';
-    const displayVal = val === null || val === undefined ? '\u2014'
-        : sensor.sensor_type === 'water' ? (parseFloat(val) === 1 ? 'Leak' : 'Dry')
-            : isBoolean ? (parseFloat(val) === 1 ? 'Active' : 'Clear')
-            : parseFloat(val).toFixed(1);
-    const isAlert = (sensor.sensor_type === 'smoke' && parseFloat(val) > 0)
-        || (sensor.sensor_type === 'water' && parseFloat(val) > 0);
+    const displayVal = formatSensorDisplayValue(sensorType, val);
+    const isAlert = isSensorAlert(sensorType, val);
 
     return (
         <div style={{
@@ -85,7 +80,7 @@ const STAT_TILE = (alert) => ({
 const STAT_LABEL = { color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 };
 
 function HazardCard({ icon: Icon, label, sensors, accent, alertText, kind = 'smoke' }) {
-    const active = sensors.filter(s => parseFloat(s.numeric_value) > 0).length;
+    const active = sensors.filter(s => isSensorAlert(normalizeSensorType(s.sensor_type), s.numeric_value)).length;
     const total = sensors.length;
     const max = sensors.reduce((m, s) => Math.max(m, parseFloat(s.numeric_value) || 0), 0);
     const isAlert = active > 0;
@@ -96,10 +91,10 @@ function HazardCard({ icon: Icon, label, sensors, accent, alertText, kind = 'smo
     let detailValue = '\u2014';
 
     if (total > 0) {
-        if (kind === 'water') {
-            statusValue = isAlert ? 'Leak detected' : 'No leak';
-            detailLabel = 'Coverage';
-            detailValue = total === 1 ? '1 zone' : `${total} zones`;
+        if (kind === 'soil_moisture') {
+            statusValue = isAlert ? 'Soil dry' : 'Moisture OK';
+            detailLabel = 'Probe';
+            detailValue = total === 1 ? '1 sensor' : `${total} sensors`;
         } else {
             statusValue = isAlert ? 'Smoke detected' : 'Air clear';
             detailLabel = isAlert ? 'Peak level' : 'Reading';
@@ -222,7 +217,7 @@ const DashboardPage = () => {
 
             const { data: camEvts } = await supabase
                 .from('camera_events')
-                .select('*, event_faces(*, residents(name, id))')
+                .select('*, event_faces(*, residents!resident_id(name, id))')
                 .order('created_at', { ascending: false })
                 .limit(1);
             if (camEvts?.length > 0) setLastCameraEvent(camEvts[0]);
@@ -257,7 +252,7 @@ const DashboardPage = () => {
                     try {
                         const { data } = await supabase
                             .from('camera_events')
-                            .select('*, event_faces(*, residents(name, id))')
+                            .select('*, event_faces(*, residents!resident_id(name, id))')
                             .eq('id', row.id)
                             .single();
                         if (data) setLastCameraEvent(data);
@@ -271,7 +266,10 @@ const DashboardPage = () => {
     const tempSensors = sensors.filter(s => s.sensor_type === 'temperature');
     const humSensors = sensors.filter(s => s.sensor_type === 'humidity');
     const smokeSensors = sensors.filter(s => s.sensor_type === 'smoke');
-    const waterSensors = sensors.filter(s => s.sensor_type === 'water');
+    const soilSensors = sensors.filter(s => {
+        const t = normalizeSensorType(s.sensor_type);
+        return t === 'soil_moisture';
+    });
     const avgTemp = tempSensors.reduce((a, s) => a + (s.numeric_value || 0), 0) / (tempSensors.length || 1);
     const avgHum = humSensors.reduce((a, s) => a + (s.numeric_value || 0), 0) / (humSensors.length || 1);
     const activeMotions = sensors.filter(s => s.sensor_type === 'motion' && s.numeric_value === 1).length;
@@ -390,12 +388,12 @@ const DashboardPage = () => {
                 />
 
                 <HazardCard
-                    icon={Waves}
-                    label="Water"
-                    sensors={waterSensors}
-                    accent="#3b9eff"
-                    alertText="LEAK"
-                    kind="water"
+                    icon={Sprout}
+                    label="Soil moisture"
+                    sensors={soilSensors}
+                    accent="#7cb342"
+                    alertText="DRY"
+                    kind="soil_moisture"
                 />
             </div>
 

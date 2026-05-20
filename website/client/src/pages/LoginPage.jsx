@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Zap, ArrowRight, Thermometer, Droplets, ShieldCheck, Eye, CheckCircle } from 'lucide-react';
+import { Zap, ArrowRight, Thermometer, Sprout, ShieldCheck, Eye, CheckCircle } from 'lucide-react';
 
 const FEATURE_PILLS = [
     { icon: Thermometer, text: 'Climate sensing', color: 'var(--ember-core)' },
     { icon: ShieldCheck, text: 'Face recognition', color: 'var(--jade-core)' },
-    { icon: Droplets, text: 'Water detection', color: 'var(--cyan-core)' },
+    { icon: Sprout, text: 'Soil moisture', color: 'var(--jade-core)' },
     { icon: Eye, text: 'Live surveillance', color: 'var(--violet-core)' },
 ];
 
